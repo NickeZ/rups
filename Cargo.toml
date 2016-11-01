@@ -2,3 +2,6 @@
 name = "procServ-ng"
 version = "0.1.0"
 authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
+
+[dependencies]
+clap = "2.16.4"
