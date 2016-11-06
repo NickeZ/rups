@@ -5,3 +5,4 @@ authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
 
 [dependencies]
 clap = "2.16.4"
+mio = "0.6.1"

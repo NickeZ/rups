@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate clap;
+extern crate mio;
 
 use std::error::Error;
 use std::io::{self};
@@ -8,8 +9,20 @@ use std::io::{BufReader, BufWriter};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::str;
+use std::collections::HashMap;
 
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App};
+
+use mio::*;
+use mio::tcp::{TcpListener, TcpStream};
+
+struct TelnetServer {
+    socket: TcpListener,
+    clients: HashMap<Token, TcpStream>,
+    token_counter: usize,
+}
+
+const TELNET_SERVER: Token = Token(0);
 
 fn main() {
     let matches = App::new("procServ-ng")
@@ -40,7 +53,7 @@ fn main() {
                                 .stdin(Stdio::piped())
                                 .stdout(Stdio::piped())
                                 .spawn() {
-            Err(why) => panic!("Couldn't spawn cat: {}", why.description()),
+            Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
             Ok(process) => process,
         };
     } else {
@@ -48,7 +61,7 @@ fn main() {
                                 .stdin(Stdio::piped())
                                 .stdout(Stdio::piped())
                                 .spawn() {
-            Err(why) => panic!("Couldn't spawn cat: {}", why.description()),
+            Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
             Ok(process) => process,
         };
     }
@@ -78,4 +91,50 @@ fn main() {
             writer.flush().unwrap();
         }
     }
+
+
+    let addr = "127.0.0.1:3000".parse().unwrap();
+
+    let mut ts = TelnetServer {
+        socket: TcpListener::bind(&addr).unwrap(),
+        clients: HashMap::new(), 
+        token_counter: 1
+    };
+
+    let mut events = Events::with_capacity(1_024);
+
+    let poll = Poll::new().unwrap();
+
+    poll.register(&ts.socket, TELNET_SERVER, Ready::readable(), PollOpt::edge()).unwrap();
+
+    loop {
+        poll.poll(&mut events, None).unwrap();
+
+        for event in events.iter() {
+            //Handle event
+            match event.token() {
+                TELNET_SERVER => {
+                    let client_socket = match ts.socket.accept() {
+                        Err(why) => {
+                            println!("Failed to accept connection: {}", why.description());
+                            return;
+                        },
+                        //Ok((None,)) => unreachable!("Accept has returned None"),
+                        Ok((stream, addr)) => stream,
+                    };
+
+                    println!("Connection on : {}", addr);
+
+                    let new_token = Token(ts.token_counter);
+                    ts.token_counter += 1;
+
+                    ts.clients.insert(new_token, client_socket);
+
+                },
+                _ => unreachable!(),
+            }
+        }
+    }
+    //event_loop.run(&mut TelnetServer).unwrap();
+
 }
