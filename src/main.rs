@@ -2,9 +2,6 @@
 extern crate clap;
 extern crate mio;
 
-use std::os::unix::io::AsRawFd;
-use std::os::unix::io::FromRawFd;
-
 use std::error::{Error};
 use std::io::{self};
 use std::io::prelude::*;
@@ -111,6 +108,9 @@ fn main() {
                           .version("0.1.0")
                           .author("Niklas Claesson <nicke.claesson@gmail.com>")
                           .about("Simple process controller")
+                          .arg(Arg::with_name("quiet")
+                               .short("q")
+                               .long("quiet"))
                           .arg(Arg::with_name("foreground")
                                .short("f")
                                .long("foreground"))
@@ -195,8 +195,7 @@ fn main() {
     loop {
         poll.poll(&mut events, None).unwrap();
 
-        for event in events.iter() {
-            //Handle event
+        for event in &events {
             if event.kind().is_readable() {
                 match event.token() {
                     TELNET_SERVER => {
@@ -275,6 +274,4 @@ fn main() {
             }
         }
     }
-    //event_loop.run(&mut TelnetServer).unwrap();
-
 }
