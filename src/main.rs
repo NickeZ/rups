@@ -93,6 +93,7 @@ impl TelnetClient {
 
     fn write(&mut self) {
         for line in &self.history.borrow_mut().lines {
+            self.stream.write(b"\x1B[31m");
             self.stream.write(line.as_bytes());
         }
         self.interest = Ready::readable();
@@ -107,7 +108,7 @@ fn main() {
     let matches = App::new("procServ-ng")
                           .version("0.1.0")
                           .author("Niklas Claesson <nicke.claesson@gmail.com>")
-                          .about("Simple process controller")
+                          .about("Simple process server")
                           .arg(Arg::with_name("quiet")
                                .short("q")
                                .long("quiet"))
