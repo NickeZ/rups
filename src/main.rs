@@ -2,27 +2,109 @@
 extern crate clap;
 extern crate mio;
 
-use std::error::Error;
+use std::os::unix::io::AsRawFd;
+use std::os::unix::io::FromRawFd;
+
+use std::error::{Error};
 use std::io::{self};
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
 use std::process::{Command, Stdio};
-use std::thread;
-use std::str;
-use std::collections::HashMap;
+use std::{thread};
+use std::{str};
+use std::collections::{HashMap};
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use std::net::{SocketAddr};
 
 use clap::{Arg, App};
 
 use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
+use mio::deprecated::{PipeReader, PipeWriter};
+
+struct History {
+    lines: Vec<String>,
+}
+
+impl History {
+    fn new() -> History {
+        History {
+            lines: Vec::new(),
+        }
+    }
+}
 
 struct TelnetServer {
     socket: TcpListener,
-    clients: HashMap<Token, TcpStream>,
+    clients: HashMap<Token, TelnetClient>,
     token_counter: usize,
 }
 
+impl TelnetServer {
+    fn new(socket:TcpListener) -> TelnetServer {
+        TelnetServer {
+            socket: socket,
+            clients: HashMap::new(),
+            token_counter: 3,
+        }
+    }
+
+    fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, history:Rc<RefCell<History>>) -> Token {
+        let new_token = Token(self.token_counter);
+        self.token_counter += 1;
+
+        self.clients.insert(new_token, TelnetClient::new(stream, addr, Ready::readable(), history));
+        new_token
+    }
+}
+
+struct TelnetClient {
+    addr: SocketAddr,
+    stream: TcpStream,
+    interest: Ready,
+    history: Rc<RefCell<History>>,
+}
+
+impl TelnetClient {
+    fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, history:Rc<RefCell<History>>) -> TelnetClient {
+        TelnetClient {
+            stream: stream,
+            addr: addr,
+            interest: interest,
+            history: history,
+        }
+    }
+
+    fn read(&mut self) {
+        let mut buffer = [0;2048];
+        match self.stream.read(&mut buffer) {
+            Err(why) => println!("noo, {}", why),
+            Ok(len) => {
+                let content = str::from_utf8(&buffer).expect("invalid utf8");
+                if len > 0 {
+                    println!("{}, Got: {}", self.addr, content);
+                    self.interest = Ready::writable();
+                } else {
+                    self.interest = self.interest | Ready::hup();
+                }
+            }
+        }
+    }
+
+    fn write(&mut self) {
+        for line in &self.history.borrow_mut().lines {
+            self.stream.write(line.as_bytes());
+        }
+        self.interest = Ready::readable();
+    }
+}
+
 const TELNET_SERVER: Token = Token(0);
+const CHILD_STDOUT: Token = Token(1);
+const CHILD_STDERR: Token = Token(2);
 
 fn main() {
     let matches = App::new("procServ-ng")
@@ -66,6 +148,9 @@ fn main() {
         };
     }
 
+    let mut child_stdout = PipeReader::from_stdout(process.stdout.take().unwrap()).unwrap();
+
+        /*
     if matches.is_present("foreground") {
         let stdout = process.stdout.take().unwrap();
         thread::spawn(move || {
@@ -75,6 +160,7 @@ fn main() {
             }
         });
     }
+    */
 
 
     if matches.is_present("interactive") {
@@ -92,46 +178,100 @@ fn main() {
         }
     }
 
+    let history = Rc::new(RefCell::new(History::new()));
 
     let addr = "127.0.0.1:3000".parse().unwrap();
 
-    let mut ts = TelnetServer {
-        socket: TcpListener::bind(&addr).unwrap(),
-        clients: HashMap::new(), 
-        token_counter: 1
-    };
+    let mut telnet_server = TelnetServer::new(TcpListener::bind(&addr).unwrap());
 
     let mut events = Events::with_capacity(1_024);
 
     let poll = Poll::new().unwrap();
 
-    poll.register(&ts.socket, TELNET_SERVER, Ready::readable(), PollOpt::edge()).unwrap();
+    poll.register(&telnet_server.socket, TELNET_SERVER, Ready::readable(), PollOpt::edge()).unwrap();
+
+    poll.register(&child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
 
     loop {
         poll.poll(&mut events, None).unwrap();
 
         for event in events.iter() {
             //Handle event
-            match event.token() {
-                TELNET_SERVER => {
-                    let client_socket = match ts.socket.accept() {
-                        Err(why) => {
-                            println!("Failed to accept connection: {}", why.description());
-                            return;
-                        },
-                        //Ok((None,)) => unreachable!("Accept has returned None"),
-                        Ok((stream, addr)) => stream,
-                    };
+            if event.kind().is_readable() {
+                match event.token() {
+                    TELNET_SERVER => {
+                        let (client_stream, client_addr)  = match telnet_server.socket.accept() {
+                            Err(why) => {
+                                println!("Failed to accept connection: {}", why.description());
+                                break;
+                            },
+                            Ok((stream, addr)) => {
+                                println!("Connection from : {}", addr);
+                                (stream, addr)
+                            },
+                        };
 
-                    println!("Connection on : {}", addr);
+                        let new_token = telnet_server.add_client(client_stream, client_addr, history.clone());
 
-                    let new_token = Token(ts.token_counter);
-                    ts.token_counter += 1;
+                        poll.register(&telnet_server.clients[&new_token].stream,
+                                      new_token, telnet_server.clients[&new_token].interest,
+                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
 
-                    ts.clients.insert(new_token, client_socket);
+                    },
+                    CHILD_STDOUT => {
+                        let mut buffer = [0;2048];
+                        child_stdout.read(&mut buffer);
+                        let mut line = String::new();
+                        line.push_str(str::from_utf8(&buffer).unwrap());
+                        history.borrow_mut().lines.push(line);
+                        let from_process_s = str::from_utf8(&buffer).unwrap();
+                        println!("it says something, {}", from_process_s);
+                        for (tok, client) in &telnet_server.clients {
+                            poll.reregister(&client.stream, *tok, Ready::writable(),
+                                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        }
+                    },
+                    CHILD_STDERR => {
+                    },
+                    token => {
+                        let mut client = telnet_server.clients.get_mut(&token).unwrap();
+                        client.read();
+                        poll.reregister(&client.stream, token,
+                                        client.interest,
+                                        PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                    }
+                }
+            }
 
-                },
-                _ => unreachable!(),
+            if event.kind().is_writable() {
+                match event.token() {
+                    CHILD_STDOUT => {
+                    },
+                    CHILD_STDERR => {
+                    },
+                    token => {
+                        let mut client = telnet_server.clients.get_mut(&token).unwrap();
+                        client.write();
+                        poll.reregister(&client.stream, token,
+                                        client.interest,
+                                        PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                    }
+                }
+            }
+
+            if event.kind().is_hup() {
+                match event.token() {
+                    CHILD_STDOUT => {
+                        println!("Nothing more..");
+                    },
+                    CHILD_STDERR => {
+                    },
+                    token => {
+                        println!("connection closed");
+                        let client = telnet_server.clients.remove(&token).unwrap();
+                        poll.deregister(&client.stream).unwrap();
+                    }
+                }
             }
         }
     }
