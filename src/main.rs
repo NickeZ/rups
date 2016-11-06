@@ -93,8 +93,9 @@ impl TelnetClient {
 
     fn write(&mut self) {
         for line in &self.history.borrow_mut().lines {
-            self.stream.write(b"\x1B[31m");
+            self.stream.write(b"\x1B[34m");
             self.stream.write(line.as_bytes());
+            self.stream.write(b"\x1B[0m");
         }
         self.interest = Ready::readable();
     }
