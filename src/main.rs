@@ -22,74 +22,36 @@ use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 use mio::deprecated::{PipeReader, PipeWriter};
 
+struct History {
+    lines: Vec<String>,
+}
+
+
 struct Child {
     child: process::Child,
     alive: bool,
-    history: Vec<String>,
-    command_args: Vec<String>,
+    history: Rc<RefCell<History>>,
 }
 
 impl Child {
-    fn new(commands:Vec<String>) -> Child {
-        let mut child;
-        {
-            let (command, args) = commands.split_first().unwrap();
-            if args.len() > 0 {
-                child = match Command::new(command)
-                                        .args(&args)
-                                        .stdin(Stdio::piped())
-                                        .stdout(Stdio::piped())
-                                        .spawn() {
-                    Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-                    Ok(process) => process,
-                };
-            } else {
-                child = match Command::new(command)
-                                        .stdin(Stdio::piped())
-                                        .stdout(Stdio::piped())
-                                        .spawn() {
-                    Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-                    Ok(process) => process,
-                };
-            }
-        }
-        Child {
-            child: child,
-            alive: true,
-            history: Vec::new(),
-            command_args: commands,
-        }
-    }
-
-    fn respawn(self) -> Child {
-        Child::new(self.command_args)
-        /*
-        let (command, args) = self.command_args.split_first().unwrap();
+    fn new(commands:&Vec<String>, history:Rc<RefCell<History>>) -> Child {
+        let (executable, args) = commands.split_first().unwrap();
+        let command = match Command::new(executable);
         if args.len() > 0 {
-            self.child = match Command::new(command)
-                                    .args(&args)
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::piped())
-                                    .spawn() {
-                Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-                Ok(process) => process,
-            };
-        } else {
-            self.child = match Command::new(command)
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::piped())
-                                    .spawn() {
-                Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-                Ok(process) => process,
-            };
+            command.args(&args)
+        }
+        let child = command.stdin(Stdio::piped())
+                           .stdout(Stdio::piped())
+                           .spawn() {
+                               Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                               Ok(process) => process,
+                            };
         }
         Child {
             child: child,
             alive: true,
-            history: Vec::new(),
-            command_args: self.commands,
+            history: history,
         }
-        */
     }
 }
 
@@ -337,11 +299,11 @@ fn main() {
                 match event.token() {
                     CHILD_STDOUT => {
                         println!("Nothing more..");
-                        child.borrow_mut().alive = false;
-                        let new_child = Child::new(child.borrow_mut().command_args.clone());
-                        child = Rc::new(RefCell::new(new_child));
-                        let mut child_stdout = PipeReader::from_stdout(child.borrow_mut().child.stdout.take().unwrap()).unwrap();
-                        poll.reregister(&child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
+                        poll.deregister(&child_stdout).unwrap();
+                        //child.borrow_mut().alive = false;
+                        let new_child = Child::new(commands, history);
+                        let new_child_stdout = PipeReader::from_stdout(new_child.borrow_mut().child.stdout.take().unwrap()).unwrap();
+                        poll.reregister(&new_child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
                     },
                     CHILD_STDERR => {
                     },
