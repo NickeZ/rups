@@ -6,7 +6,7 @@ use std::error::{Error};
 use std::io::{self};
 use std::io::prelude::*;
 use std::io::{BufReader, BufWriter};
-use std::process::{Command, Stdio};
+use std::process::{self, Command, Stdio};
 use std::{thread};
 use std::{str};
 use std::collections::{HashMap};
@@ -22,15 +22,74 @@ use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 use mio::deprecated::{PipeReader, PipeWriter};
 
-struct History {
-    lines: Vec<String>,
+struct Child {
+    child: process::Child,
+    alive: bool,
+    history: Vec<String>,
+    command_args: Vec<String>,
 }
 
-impl History {
-    fn new() -> History {
-        History {
-            lines: Vec::new(),
+impl Child {
+    fn new(commands:Vec<String>) -> Child {
+        let mut child;
+        {
+            let (command, args) = commands.split_first().unwrap();
+            if args.len() > 0 {
+                child = match Command::new(command)
+                                        .args(&args)
+                                        .stdin(Stdio::piped())
+                                        .stdout(Stdio::piped())
+                                        .spawn() {
+                    Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                    Ok(process) => process,
+                };
+            } else {
+                child = match Command::new(command)
+                                        .stdin(Stdio::piped())
+                                        .stdout(Stdio::piped())
+                                        .spawn() {
+                    Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                    Ok(process) => process,
+                };
+            }
         }
+        Child {
+            child: child,
+            alive: true,
+            history: Vec::new(),
+            command_args: commands,
+        }
+    }
+
+    fn respawn(self) -> Child {
+        Child::new(self.command_args)
+        /*
+        let (command, args) = self.command_args.split_first().unwrap();
+        if args.len() > 0 {
+            self.child = match Command::new(command)
+                                    .args(&args)
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .spawn() {
+                Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                Ok(process) => process,
+            };
+        } else {
+            self.child = match Command::new(command)
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::piped())
+                                    .spawn() {
+                Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                Ok(process) => process,
+            };
+        }
+        Child {
+            child: child,
+            alive: true,
+            history: Vec::new(),
+            command_args: self.commands,
+        }
+        */
     }
 }
 
@@ -49,29 +108,39 @@ impl TelnetServer {
         }
     }
 
-    fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, history:Rc<RefCell<History>>) -> Token {
+    fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, child:Rc<RefCell<Child>>) -> Token {
         let new_token = Token(self.token_counter);
         self.token_counter += 1;
 
-        self.clients.insert(new_token, TelnetClient::new(stream, addr, Ready::readable(), history));
+        self.clients.insert(new_token, TelnetClient::new(stream, addr, Ready::readable() | Ready::writable(), child));
         new_token
     }
+}
+
+#[derive(PartialEq)]
+enum ClientState {
+    Connected,
+    HasSentMotd,
 }
 
 struct TelnetClient {
     addr: SocketAddr,
     stream: TcpStream,
     interest: Ready,
-    history: Rc<RefCell<History>>,
+    child: Rc<RefCell<Child>>,
+    cursor: usize,
+    state: ClientState
 }
 
 impl TelnetClient {
-    fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, history:Rc<RefCell<History>>) -> TelnetClient {
+    fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, child:Rc<RefCell<Child>>) -> TelnetClient {
         TelnetClient {
             stream: stream,
             addr: addr,
             interest: interest,
-            history: history,
+            child: child,
+            cursor:0,
+            state: ClientState::Connected,
         }
     }
 
@@ -80,7 +149,13 @@ impl TelnetClient {
         match self.stream.read(&mut buffer) {
             Err(why) => println!("noo, {}", why),
             Ok(len) => {
-                let content = str::from_utf8(&buffer).expect("invalid utf8");
+                let content = match str::from_utf8(&buffer) {
+                    Err(why) => {
+                        println!("Got non-utf8.. {}", why);
+                        ""
+                    },
+                    Ok(content) => content,
+                };
                 if len > 0 {
                     println!("{}, Got: {}", self.addr, content);
                     self.interest = Ready::writable();
@@ -91,13 +166,29 @@ impl TelnetClient {
         }
     }
 
+    fn write_motd(&mut self) {
+        self.stream.write(b"\x1B[34m");
+        self.stream.write(b"Welcome to Simple Process Server\n");
+        self.stream.write(b"\x1B[0m");
+    }
+
     fn write(&mut self) {
-        for line in &self.history.borrow_mut().lines {
-            self.stream.write(b"\x1B[34m");
+        if self.state == ClientState::Connected {
+            self.write_motd();
+            self.state = ClientState::HasSentMotd;
+        }
+        for line in &self.child.borrow_mut().history[self.cursor..] {
+            self.stream.write(b"\x1B[31m");
             self.stream.write(line.as_bytes());
             self.stream.write(b"\x1B[0m");
+            self.cursor += 1;
         }
         self.interest = Ready::readable();
+        if self.child.borrow_mut().alive == false {
+            self.stream.write(b"\x1B[34m");
+            self.stream.write(b"Process has died...\n");
+            self.stream.write(b"\x1B[0m");
+        }
     }
 }
 
@@ -129,28 +220,10 @@ fn main() {
                           .get_matches();
 
     let commands = values_t!(matches, "command", String).unwrap();
-    let mut process;
-    let (command, args) = commands.split_first().unwrap();
-    if args.len() > 0 {
-        process = match Command::new(command)
-                                .args(&args)
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .spawn() {
-            Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-            Ok(process) => process,
-        };
-    } else {
-        process = match Command::new(command)
-                                .stdin(Stdio::piped())
-                                .stdout(Stdio::piped())
-                                .spawn() {
-            Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
-            Ok(process) => process,
-        };
-    }
 
-    let mut child_stdout = PipeReader::from_stdout(process.stdout.take().unwrap()).unwrap();
+    let mut child = Rc::new(RefCell::new(Child::new(commands)));
+
+    let mut child_stdout = PipeReader::from_stdout(child.borrow_mut().child.stdout.take().unwrap()).unwrap();
 
         /*
     if matches.is_present("foreground") {
@@ -165,8 +238,9 @@ fn main() {
     */
 
 
+    /*
     if matches.is_present("interactive") {
-        let mut stdin = process.stdin.unwrap();
+        let mut stdin = child.borrow_mut().child.stdin.unwrap();
         let mut writer = BufWriter::new(&mut stdin);
         loop {
             let mut buffer = String::new();
@@ -179,8 +253,7 @@ fn main() {
             writer.flush().unwrap();
         }
     }
-
-    let history = Rc::new(RefCell::new(History::new()));
+    */
 
     let addr = "127.0.0.1:3000".parse().unwrap();
 
@@ -212,7 +285,7 @@ fn main() {
                             },
                         };
 
-                        let new_token = telnet_server.add_client(client_stream, client_addr, history.clone());
+                        let new_token = telnet_server.add_client(client_stream, client_addr, child.clone());
 
                         poll.register(&telnet_server.clients[&new_token].stream,
                                       new_token, telnet_server.clients[&new_token].interest,
@@ -224,7 +297,7 @@ fn main() {
                         child_stdout.read(&mut buffer);
                         let mut line = String::new();
                         line.push_str(str::from_utf8(&buffer).unwrap());
-                        history.borrow_mut().lines.push(line);
+                        child.borrow_mut().history.push(line);
                         let from_process_s = str::from_utf8(&buffer).unwrap();
                         println!("it says something, {}", from_process_s);
                         for (tok, client) in &telnet_server.clients {
@@ -264,6 +337,11 @@ fn main() {
                 match event.token() {
                     CHILD_STDOUT => {
                         println!("Nothing more..");
+                        child.borrow_mut().alive = false;
+                        let new_child = Child::new(child.borrow_mut().command_args.clone());
+                        child = Rc::new(RefCell::new(new_child));
+                        let mut child_stdout = PipeReader::from_stdout(child.borrow_mut().child.stdout.take().unwrap()).unwrap();
+                        poll.reregister(&child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
                     },
                     CHILD_STDERR => {
                     },
