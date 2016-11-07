@@ -23,10 +23,14 @@ use mio::tcp::{TcpListener, TcpStream};
 use mio::deprecated::{PipeReader, PipeWriter};
 
 enum HistoryLineType {
+    Stdout,
+    Stderr,
+    Info,
+}
 
 
 struct History {
-    lines: Vec<String>,
+    lines: Vec<(HistoryLineType, String)>,
 }
 
 impl History {
@@ -42,6 +46,7 @@ struct Child {
     child: process::Child,
     alive: bool,
     history: Rc<RefCell<History>>,
+    mailbox: Vec<String>,
 }
 
 impl Child {
@@ -62,6 +67,17 @@ impl Child {
             child: child,
             alive: true,
             history: history,
+            mailbox: Vec::new(),
+        }
+    }
+
+    fn send(&mut self, msg:String) {
+        self.mailbox.push(msg);
+    }
+
+    fn write(&mut self) {
+        for msg in self.mailbox.drain(..) {
+            self.child.stdin.unwrap().write(msg.as_bytes());
         }
     }
 }
@@ -117,15 +133,15 @@ impl TelnetClient {
         }
     }
 
-    fn read(&mut self) {
+    fn read(&mut self) -> Option<String> {
         let mut buffer = [0;2048];
         match self.stream.read(&mut buffer) {
             Err(why) => println!("noo, {}", why),
             Ok(len) => {
-                let content = match str::from_utf8(&buffer) {
+                let content:String = match String::from_utf8(buffer[0..len].to_vec()) {
                     Err(why) => {
                         println!("Got non-utf8.. {}", why);
-                        ""
+                        String::new()
                     },
                     Ok(content) => content,
                 };
@@ -135,14 +151,16 @@ impl TelnetClient {
                 } else {
                     self.interest = self.interest | Ready::hup();
                 }
+                return Some(content);
             }
         }
+        None
     }
 
     fn write_motd(&mut self) {
-        self.stream.write(b"\x1B[34m");
-        self.stream.write(b"Welcome to Simple Process Server\n");
-        self.stream.write(b"\x1B[0m");
+        self.stream.write(b"\x1B[33m");
+        self.stream.write(b"Welcome to Simple Process Server");
+        self.stream.write(b"\x1B[0m\r\n");
     }
 
     fn write(&mut self) {
@@ -151,9 +169,15 @@ impl TelnetClient {
             self.state = ClientState::HasSentMotd;
         }
         for line in &self.history.borrow_mut().lines[self.cursor..] {
-            self.stream.write(b"\x1B[31m");
-            self.stream.write(line.as_bytes());
+            let preamble = match line.0 {
+                HistoryLineType::Stdout => b"\x1B[39m",
+                HistoryLineType::Stderr => b"\x1B[32m",
+                HistoryLineType::Info => b"\x1B[33m",
+            };
+            self.stream.write(preamble);
+            self.stream.write(line.1.as_bytes());
             self.stream.write(b"\x1B[0m");
+            self.stream.write(b"\r\n");
             self.cursor += 1;
         }
         self.interest = Ready::readable();
@@ -170,6 +194,8 @@ impl TelnetClient {
 const TELNET_SERVER: Token = Token(0);
 const CHILD_STDOUT: Token = Token(1);
 const CHILD_STDERR: Token = Token(2);
+const CHILD_STDIN: Token = Token(3);
+const TELNET_CLIENT_START: Token = Token(4);
 
 fn main() {
     let matches = App::new("procServ-ng")
@@ -201,6 +227,7 @@ fn main() {
     let mut child = Child::new(&commands, history.clone());
 
     let mut child_stdout = PipeReader::from_stdout(child.child.stdout.take().unwrap()).unwrap();
+    let mut child_stdin = PipeWriter::from_stdin(child.child.stdin.take().unwrap()).unwrap();
 
         /*
     if matches.is_present("foreground") {
@@ -271,12 +298,10 @@ fn main() {
                     },
                     CHILD_STDOUT => {
                         let mut buffer = [0;2048];
-                        child_stdout.read(&mut buffer);
-                        let mut line = String::new();
-                        line.push_str(str::from_utf8(&buffer).unwrap());
-                        history.borrow_mut().lines.push(line);
-                        let from_process_s = str::from_utf8(&buffer).unwrap();
-                        println!("it says something, {}", from_process_s);
+                        let len = child_stdout.read(&mut buffer).unwrap();
+                        let mut line = String::from_utf8(buffer[0..len-1].to_vec()).unwrap();
+                        println!("len {}, {}", line.len(), &line);
+                        history.borrow_mut().lines.push((HistoryLineType::Stdout, line));
                         for (tok, client) in &telnet_server.clients {
                             poll.reregister(&client.stream, *tok, Ready::writable(),
                                             PollOpt::edge() | PollOpt::oneshot()).unwrap();
@@ -286,10 +311,12 @@ fn main() {
                     },
                     token => {
                         let mut client = telnet_server.clients.get_mut(&token).unwrap();
-                        client.read();
+                        let command = client.read();
                         poll.reregister(&client.stream, token,
                                         client.interest,
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        child.send(command.unwrap());
+                        poll.register(&child_stdin, CHILD_STDIN, Ready::writable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     }
                 }
             }
@@ -299,6 +326,8 @@ fn main() {
                     CHILD_STDOUT => {
                     },
                     CHILD_STDERR => {
+                        child.write();
+                        poll.register(&child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
                     },
                     token => {
                         let mut client = telnet_server.clients.get_mut(&token).unwrap();
@@ -314,6 +343,7 @@ fn main() {
                 match event.token() {
                     CHILD_STDOUT => {
                         println!("Nothing more..");
+                        history.borrow_mut().lines.push((HistoryLineType::Info, String::from("Process died, restarting...")));
                         poll.deregister(&child_stdout).unwrap();
                         //child.borrow_mut().alive = false;
                         let mut new_child = Child::new(&commands, history.clone());
