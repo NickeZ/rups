@@ -22,8 +22,19 @@ use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 use mio::deprecated::{PipeReader, PipeWriter};
 
+enum HistoryLineType {
+
+
 struct History {
     lines: Vec<String>,
+}
+
+impl History {
+    fn new() -> History {
+        History {
+            lines: Vec::new(),
+        }
+    }
 }
 
 
@@ -36,17 +47,17 @@ struct Child {
 impl Child {
     fn new(commands:&Vec<String>, history:Rc<RefCell<History>>) -> Child {
         let (executable, args) = commands.split_first().unwrap();
-        let command = match Command::new(executable);
+        let mut command = Command::new(executable);
         if args.len() > 0 {
-            command.args(&args)
+            command.args(&args);
         }
-        let child = command.stdin(Stdio::piped())
+        let child = match command.stdin(Stdio::piped())
                            .stdout(Stdio::piped())
                            .spawn() {
-                               Err(why) => panic!("Couldn't spawn {}: {}", command, why.description()),
+                               Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
                                Ok(process) => process,
                             };
-        }
+        println!("Successfully launched {}!", executable);
         Child {
             child: child,
             alive: true,
@@ -70,11 +81,11 @@ impl TelnetServer {
         }
     }
 
-    fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, child:Rc<RefCell<Child>>) -> Token {
+    fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, history:Rc<RefCell<History>>) -> Token {
         let new_token = Token(self.token_counter);
         self.token_counter += 1;
 
-        self.clients.insert(new_token, TelnetClient::new(stream, addr, Ready::readable() | Ready::writable(), child));
+        self.clients.insert(new_token, TelnetClient::new(stream, addr, Ready::readable() | Ready::writable(), history));
         new_token
     }
 }
@@ -89,18 +100,18 @@ struct TelnetClient {
     addr: SocketAddr,
     stream: TcpStream,
     interest: Ready,
-    child: Rc<RefCell<Child>>,
+    history: Rc<RefCell<History>>,
     cursor: usize,
     state: ClientState
 }
 
 impl TelnetClient {
-    fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, child:Rc<RefCell<Child>>) -> TelnetClient {
+    fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, history:Rc<RefCell<History>>) -> TelnetClient {
         TelnetClient {
             stream: stream,
             addr: addr,
             interest: interest,
-            child: child,
+            history: history,
             cursor:0,
             state: ClientState::Connected,
         }
@@ -139,18 +150,20 @@ impl TelnetClient {
             self.write_motd();
             self.state = ClientState::HasSentMotd;
         }
-        for line in &self.child.borrow_mut().history[self.cursor..] {
+        for line in &self.history.borrow_mut().lines[self.cursor..] {
             self.stream.write(b"\x1B[31m");
             self.stream.write(line.as_bytes());
             self.stream.write(b"\x1B[0m");
             self.cursor += 1;
         }
         self.interest = Ready::readable();
+        /*
         if self.child.borrow_mut().alive == false {
             self.stream.write(b"\x1B[34m");
             self.stream.write(b"Process has died...\n");
             self.stream.write(b"\x1B[0m");
         }
+        */
     }
 }
 
@@ -183,9 +196,11 @@ fn main() {
 
     let commands = values_t!(matches, "command", String).unwrap();
 
-    let mut child = Rc::new(RefCell::new(Child::new(commands)));
+    let history = Rc::new(RefCell::new(History::new()));
 
-    let mut child_stdout = PipeReader::from_stdout(child.borrow_mut().child.stdout.take().unwrap()).unwrap();
+    let mut child = Child::new(&commands, history.clone());
+
+    let mut child_stdout = PipeReader::from_stdout(child.child.stdout.take().unwrap()).unwrap();
 
         /*
     if matches.is_present("foreground") {
@@ -247,7 +262,7 @@ fn main() {
                             },
                         };
 
-                        let new_token = telnet_server.add_client(client_stream, client_addr, child.clone());
+                        let new_token = telnet_server.add_client(client_stream, client_addr, history.clone());
 
                         poll.register(&telnet_server.clients[&new_token].stream,
                                       new_token, telnet_server.clients[&new_token].interest,
@@ -259,7 +274,7 @@ fn main() {
                         child_stdout.read(&mut buffer);
                         let mut line = String::new();
                         line.push_str(str::from_utf8(&buffer).unwrap());
-                        child.borrow_mut().history.push(line);
+                        history.borrow_mut().lines.push(line);
                         let from_process_s = str::from_utf8(&buffer).unwrap();
                         println!("it says something, {}", from_process_s);
                         for (tok, client) in &telnet_server.clients {
@@ -301,9 +316,9 @@ fn main() {
                         println!("Nothing more..");
                         poll.deregister(&child_stdout).unwrap();
                         //child.borrow_mut().alive = false;
-                        let new_child = Child::new(commands, history);
-                        let new_child_stdout = PipeReader::from_stdout(new_child.borrow_mut().child.stdout.take().unwrap()).unwrap();
-                        poll.reregister(&new_child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
+                        let mut new_child = Child::new(&commands, history.clone());
+                        child_stdout = PipeReader::from_stdout(new_child.child.stdout.take().unwrap()).unwrap();
+                        poll.register(&child_stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge()).unwrap();
                     },
                     CHILD_STDERR => {
                     },
