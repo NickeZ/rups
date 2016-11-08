@@ -1,6 +1,6 @@
 # Rups
 
-This is an attempt to write a procServ implementation in rust.
+This is an attempt to write a [procServ(1)](https://linux.die.net/man/1/procserv) implementation in rust.
 
 Currently very much under development...
 
