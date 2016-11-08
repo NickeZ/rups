@@ -333,7 +333,7 @@ fn run(_sdone: chan::Sender<()>) {
                                .short("b")
                                .long("bind")
                                .multiple(true)
-                               .help("Bind to address")
+                               .help("Bind to address (default is 127.0.0.1:3000")
                                .takes_value(true))
                           .arg(Arg::with_name("logbind")
                                .short("l")
@@ -359,9 +359,18 @@ fn run(_sdone: chan::Sender<()>) {
 
     let mut child = Child::new(&commands, history.clone(), foreground);
 
-
-
-    let addr = "127.0.0.1:3000".parse().unwrap();
+    let addr = match matches.value_of("bind") {
+        Some(bind) => {
+            match bind.parse() {
+                Err(why) => {
+                    println!("Failed to parse bind... {}", why);
+                    "127.0.0.1:3000".parse().unwrap()
+                },
+                Ok(bind) => bind,
+            }
+        },
+        None  => "127.0.0.1:3000".parse().unwrap(),
+    };
 
     let tcp_listener = match TcpListener::bind(&addr) {
         Ok(listener) => listener,
