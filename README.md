@@ -18,3 +18,8 @@ considered under development...
 1. Install nightly rust with: `curl https://sh.rustup.rs -sSf | sh`.
    (https://www.rustup.rs/)
 2. Run with `cargo run -- -h` to see the built-in help.
+
+## Example Usage
+
+1. Launch python through rups: `cargo run -- python`
+2. Connect to python through separate terminal: `telnet localhost 3000`
