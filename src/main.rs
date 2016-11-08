@@ -309,10 +309,10 @@ fn push_info(history:&Rc<RefCell<History>>, message:String) {
 }
 
 fn run(_sdone: chan::Sender<()>) {
-    let matches = App::new("procServ-ng")
+    let matches = App::new("Rups")
                           .version("0.1.0")
                           .author("Niklas Claesson <nicke.claesson@gmail.com>")
-                          .about("Simple process server")
+                          .about("Rust process server")
                           .arg(Arg::with_name("quiet")
                                .short("q")
                                .long("quiet")
