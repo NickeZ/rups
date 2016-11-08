@@ -1,8 +1,25 @@
 [package]
-name = "procServ-ng"
+name = "rups"
 version = "0.1.0"
 authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
+description = """\
+    Rust Process Server lets you connect to your processes via telnet.\
+    It is heavily inspired by procServ.\
+    """
+homepage = "https://github.com/NickeZ/rups"
+repository = "https://github.com/NickeZ/rups"
 
 [dependencies]
 clap = "2.16.4"
 mio = "0.6.1"
+time = "0.1.35"
+tty = "0.5.0"
+chan = "0.1.18"
+chan-signal = "0.1.7"
+libc = "0.2"
+fd = "0.2.2"
+termios = "0.2.2"
+
+[dependencies.rust-telnet]
+git = "https://github.com/Nercury/rust-telnet.git"
+rev = "a1b5c532cad01c26458d99667eda9429ae188e56"
