@@ -6,11 +6,11 @@ use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 
 use telnet_client::TelnetClient;
-use ::history::History;
+use history::History;
 
 pub struct TelnetServer {
     pub socket: TcpListener,
-    pub clients: HashMap<Token, telnet_client::TelnetClient>,
+    pub clients: HashMap<Token, TelnetClient>,
     token_counter: usize,
 }
 
@@ -25,16 +25,18 @@ impl TelnetServer {
 
     pub fn add_client(&mut self, stream:TcpStream, addr:SocketAddr,
                       history:Rc<RefCell<History>>) -> Token {
+        // Create new token and increase the token counter
         let new_token = Token(self.token_counter);
         self.token_counter += 1;
-
-        self.clients.insert(new_token,
-                            TelnetClient::new(stream, addr,
-                                              Ready::readable() | Ready::writable(), history));
+        // Insert new client into client collection
+        let interest = Ready::readable() | Ready::writable();
+        let client = TelnetClient::new(stream, addr, interest, history);
+        self.clients.insert(new_token, client);
+        // Return the new token
         new_token
     }
 
-    pub fn notify_clients(&mut self, poll:& Poll){
+    pub fn poll_clients_write(&mut self, poll:& Poll){
         for (tok, client) in &self.clients {
             poll.reregister(client.get_stream(), *tok, Ready::writable(),
                             PollOpt::edge() | PollOpt::oneshot()).unwrap();

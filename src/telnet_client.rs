@@ -21,7 +21,7 @@ enum ClientState {
 }
 
 pub struct TelnetClient {
-    pub addr: SocketAddr,
+    addr: SocketAddr,
     stream: TcpStream,
     pub interest: Ready,
     history: Rc<RefCell<History>>,
@@ -50,16 +50,24 @@ impl TelnetClient {
         &self.stream
     }
 
+    pub fn get_addr(&self) -> &SocketAddr {
+        &self.addr
+    }
+
     pub fn read(&mut self) -> Option<String> {
+        // Create a temporary buffer to read into
         let mut buffer = [0;2048];
         match self.stream.read(&mut buffer) {
             Err(why) => println!("Failed to read stream: {}", why),
             Ok(len) => {
+                // Create a temporary String to convert the buffer from
                 let mut content = String::new();
                 for token in self.tokenizer.tokenize(&buffer[0..len]) {
                     match token {
                         TelnetToken::Text(text) => {
                             //println!("token text: {:?}", text);
+                            // Every time we receive a token that begins with a CR we send
+                            // a newline instead to the process since the process runs on Linux.
                             if text[0] == '\r' as u8 {
                                 content.push(LINESEP);
                             } else {
@@ -83,6 +91,7 @@ impl TelnetClient {
                         }
                     }
                 }
+                // If we receive a zero length string we interpret that as connection lost.
                 if len == 0 {
                     self.interest = self.interest | Ready::hup();
                 }

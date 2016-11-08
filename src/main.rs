@@ -177,7 +177,7 @@ fn run(_sdone: chan::Sender<()>) {
                             },
                             Ok((stream, addr)) => {
                                 push_info(&history, format!("[{}] Connection established\n", addr));
-                                telnet_server.notify_clients(&poll);
+                                telnet_server.poll_clients_write(&poll);
                                 (stream, addr)
                             },
                         };
@@ -193,7 +193,7 @@ fn run(_sdone: chan::Sender<()>) {
                         // Read from the child process
                         child.read();
                         // We are ready to write data to telnet connections
-                        telnet_server.notify_clients(&poll);
+                        telnet_server.poll_clients_write(&poll);
                         // We are also ready to get more data from the child process
                         poll.reregister(&child.stdout, CHILD_STDOUT, Ready::readable(),
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
@@ -256,7 +256,7 @@ fn run(_sdone: chan::Sender<()>) {
                     CHILD_STDOUT | CHILD_STDIN => {
                         // Notify all clients that process died
                         push_info(&history, String::from("Process died, restarting...\n"));
-                        telnet_server.notify_clients(&poll);
+                        telnet_server.poll_clients_write(&poll);
 
                         // Clean out the old process
                         poll.deregister(&child.stdout).unwrap();
@@ -275,8 +275,8 @@ fn run(_sdone: chan::Sender<()>) {
                     },
                     token => {
                         let client = telnet_server.clients.remove(&token).unwrap();
-                        push_info(&history, format!("[{}] Connection lost\n", client.addr));
-                        telnet_server.notify_clients(&poll);
+                        push_info(&history, format!("[{}] Connection lost\n", client.get_addr()));
+                        telnet_server.poll_clients_write(&poll);
                         poll.deregister(client.get_stream()).unwrap();
                     }
                 }
