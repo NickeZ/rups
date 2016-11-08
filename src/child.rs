@@ -37,11 +37,12 @@ impl Child {
             Err(why) => panic!("Error, could not open tty: {}", why),
         };
         let child = match ttyserver.spawn(command) {
-                               Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
-                               Ok(p) => p,
-                            };
+            Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
+            Ok(p) => p,
+        };
 
-        history.borrow_mut().push(HistoryType::Info, format!("Successfully launched {}!\n", executable));
+        history.borrow_mut().push(HistoryType::Info, format!("Successfully launched {}!\n",
+                                                             executable));
         let fd = FileDesc::new(ttyserver.get_master().as_raw_fd(), false);
         let fd2 = fd.dup().unwrap();
         let child_stdin = unsafe { PipeWriter::from_raw_fd(fd.as_raw_fd())};

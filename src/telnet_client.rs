@@ -32,7 +32,8 @@ pub struct TelnetClient {
 }
 
 impl TelnetClient {
-    pub fn new(stream:TcpStream, addr: SocketAddr, interest:Ready, history:Rc<RefCell<History>>) -> TelnetClient {
+    pub fn new(stream:TcpStream, addr: SocketAddr, interest:Ready,
+               history:Rc<RefCell<History>>) -> TelnetClient {
         TelnetClient {
             stream: stream,
             addr: addr,

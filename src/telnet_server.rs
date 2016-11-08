@@ -5,7 +5,7 @@ use std::net::{SocketAddr};
 use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 
-use telnet_client;
+use telnet_client::TelnetClient;
 use ::history::History;
 
 pub struct TelnetServer {
@@ -23,11 +23,14 @@ impl TelnetServer {
         }
     }
 
-    pub fn add_client(&mut self, stream:TcpStream, addr:SocketAddr, history:Rc<RefCell<History>>) -> Token {
+    pub fn add_client(&mut self, stream:TcpStream, addr:SocketAddr,
+                      history:Rc<RefCell<History>>) -> Token {
         let new_token = Token(self.token_counter);
         self.token_counter += 1;
 
-        self.clients.insert(new_token, telnet_client::TelnetClient::new(stream, addr, Ready::readable() | Ready::writable(), history));
+        self.clients.insert(new_token,
+                            TelnetClient::new(stream, addr,
+                                              Ready::readable() | Ready::writable(), history));
         new_token
     }
 

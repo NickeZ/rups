@@ -182,7 +182,8 @@ fn run(_sdone: chan::Sender<()>) {
                             },
                         };
 
-                        let new_token = telnet_server.add_client(client_stream, client_addr, history.clone());
+                        let new_token = telnet_server.add_client(client_stream, client_addr,
+                                                                 history.clone());
                         let stream = telnet_server.clients[&new_token].get_stream();
                         poll.register(stream, new_token, Ready::readable() | Ready::writable(),
                                       PollOpt::edge() | PollOpt::oneshot()).unwrap();
@@ -194,7 +195,8 @@ fn run(_sdone: chan::Sender<()>) {
                         // We are ready to write data to telnet connections
                         telnet_server.notify_clients(&poll);
                         // We are also ready to get more data from the child process
-                        poll.reregister(&child.stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        poll.reregister(&child.stdout, CHILD_STDOUT, Ready::readable(),
+                                        PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     },
                     CHILD_STDIN => { unreachable!() },
                     PROMPT_INPUT => {
@@ -205,10 +207,12 @@ fn run(_sdone: chan::Sender<()>) {
                                 Err(why) => println!("Failed to parse utf8: {}", why),
                                 Ok(line) => {
                                     child.send(line);
-                                    poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                                    poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
+                                                    PollOpt::edge() | PollOpt::oneshot()).unwrap();
                                 }
                             };
-                            poll.reregister(prompt_input, PROMPT_INPUT, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                            poll.reregister(prompt_input, PROMPT_INPUT, Ready::readable(),
+                                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
                         }
                     }
                     token => {
@@ -221,7 +225,8 @@ fn run(_sdone: chan::Sender<()>) {
                         // Register to the event loop since we are ready to write some data to the child process.
                         if let Some(command) = client.read() {
                             child.send(command);
-                            poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                            poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
+                                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
                         }
                     }
                 }
@@ -260,8 +265,10 @@ fn run(_sdone: chan::Sender<()>) {
 
                         // Create a new process
                         child = child::Child::new(&commands, history.clone(), foreground);
-                        poll.register(&child.stdin, CHILD_STDIN, Ready::writable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
-                        poll.register(&child.stdout, CHILD_STDOUT, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        poll.register(&child.stdin, CHILD_STDIN, Ready::writable(),
+                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        poll.register(&child.stdout, CHILD_STDOUT, Ready::readable(),
+                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     },
                     PROMPT_INPUT => {
                         break;
