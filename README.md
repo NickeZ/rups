@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/NickeZ/rups.svg?branch=master)](https://travis-ci.org/NickeZ/rups)
+
 # Rups
 
 This is an attempt to write an event-driven
