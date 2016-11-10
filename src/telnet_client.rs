@@ -12,6 +12,8 @@ use time;
 use history::HistoryType;
 use history::History;
 
+use telnet_server::*;
+
 const LINESEP:char = '\n';
 
 #[derive(PartialEq)]
@@ -29,11 +31,12 @@ pub struct TelnetClient {
     state: ClientState,
     tokenizer: TelnetTokenizer,
     server_echo: bool,
+    pub kind: BindKind,
 }
 
 impl TelnetClient {
     pub fn new(stream:TcpStream, addr: SocketAddr, interest:Ready,
-               history:Rc<RefCell<History>>) -> TelnetClient {
+               history:Rc<RefCell<History>>, kind:BindKind) -> TelnetClient {
         TelnetClient {
             stream: stream,
             addr: addr,
@@ -43,6 +46,7 @@ impl TelnetClient {
             state: ClientState::Connected,
             tokenizer: TelnetTokenizer::new(),
             server_echo: true,
+            kind: kind,
         }
     }
 
@@ -91,6 +95,7 @@ impl TelnetClient {
                         }
                     }
                 }
+                self.interest = Ready::writable();
                 // If we receive a zero length string we interpret that as connection lost.
                 if len == 0 {
                     self.interest = self.interest | Ready::hup();

@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate clap;
 extern crate mio;
+extern crate slab;
 extern crate time;
 extern crate rust_telnet as telnet;
 extern crate tty;
@@ -16,27 +17,27 @@ mod telnet_server;
 mod telnet_client;
 mod child;
 
-use std::error::{Error};
 use std::io::prelude::*;
 use std::os::unix::io::{FromRawFd};
+use std::net::SocketAddr;
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 
 use clap::{Arg, App};
 use mio::*;
-use mio::tcp::{TcpListener};
 use mio::deprecated::{PipeReader};
 use chan_signal::{Signal};
 use termios::*;
 
 use history::*;
+use telnet_server::*;
 
-const TELNET_SERVER: Token = Token(0);
-const CHILD_STDOUT: Token = Token(1);
-const CHILD_STDIN: Token = Token(2);
-const PROMPT_INPUT: Token = Token(3);
-const TELNET_CLIENT_START: Token = Token(4);
+// Number of connections cannot go above 10 million.
+const CHILD_STDOUT: Token = Token(10_000_001);
+const CHILD_STDIN: Token = Token(10_000_002);
+const PROMPT_INPUT: Token = Token(10_000_003);
+const SERVER_BIND_START: Token = Token(10_000_004);
 
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
     history.borrow_mut().push(HistoryType::Info, message);
@@ -114,32 +115,42 @@ fn run(_sdone: chan::Sender<()>) {
 
     let mut child = child::Child::new(&commands, history.clone(), foreground);
 
-    let addr = match matches.value_of("bind") {
-        Some(bind) => {
-            match bind.parse() {
-                Err(why) => {
-                    println!("Failed to parse bind... {}", why);
-                    "127.0.0.1:3000".parse().unwrap()
-                },
-                Ok(bind) => bind,
+
+    let mut logaddrs:Vec<SocketAddr> = Vec::new();
+    if let Ok(bindv) =  values_t!(matches, "logbind", String) {
+        for bind in &bindv {
+            if let Ok(addr) = bind.parse() {
+                logaddrs.push(addr);
+            } else {
+                // TODO: Parse it as a unix socket instead..
             }
-        },
-        None  => "127.0.0.1:3000".parse().unwrap(),
-    };
+        }
+    }
 
-    let tcp_listener = match TcpListener::bind(&addr) {
-        Ok(listener) => listener,
-        Err(why) => panic!("Failed to bind to port {}", why),
-    };
+    let mut addrs:Vec<SocketAddr> = Vec::new();
+    if let Ok(bindv) =  values_t!(matches, "bind", String) {
+        for bind in &bindv {
+            if let Ok(addr) = bind.parse() {
+                addrs.push(addr);
+            } else {
+                // TODO: Parse it as a unix socket instead..
+            }
+        }
+    }
 
-    let mut telnet_server = telnet_server::TelnetServer::new(tcp_listener);
-
-    let mut events = Events::with_capacity(1_024);
+    let mut telnet_server = telnet_server::TelnetServer::new();
 
     let poll = Poll::new().unwrap();
 
-    poll.register(&telnet_server.socket, TELNET_SERVER,
-                  Ready::readable(), PollOpt::edge()).unwrap();
+    for addr in logaddrs {
+        telnet_server.add_bind(&poll, addr, BindKind::Log);
+        println!("Listening on Port {}", addr);
+    }
+
+    for addr in addrs {
+        telnet_server.add_bind(&poll, addr, BindKind::Control);
+        println!("Listening on Port {}", addr);
+    }
 
     poll.register(&child.stdin, CHILD_STDIN, Ready::writable(),
                   PollOpt::edge() | PollOpt::oneshot()).unwrap();
@@ -163,32 +174,14 @@ fn run(_sdone: chan::Sender<()>) {
         }
     }
 
+    let mut events = Events::with_capacity(1_024);
     loop {
         poll.poll(&mut events, None).unwrap();
 
         for event in &events {
             if event.kind().is_readable() {
+                //println!("got read token {:?}", token);
                 match event.token() {
-                    TELNET_SERVER => {
-                        let (client_stream, client_addr)  = match telnet_server.socket.accept() {
-                            Err(why) => {
-                                println!("Failed to accept connection: {}", why.description());
-                                break;
-                            },
-                            Ok((stream, addr)) => {
-                                push_info(&history, format!("[{}] Connection established\n", addr));
-                                telnet_server.poll_clients_write(&poll);
-                                (stream, addr)
-                            },
-                        };
-
-                        let new_token = telnet_server.add_client(client_stream, client_addr,
-                                                                 history.clone());
-                        let stream = telnet_server.clients[&new_token].get_stream();
-                        poll.register(stream, new_token, Ready::readable() | Ready::writable(),
-                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
-
-                    },
                     CHILD_STDOUT => {
                         // Read from the child process
                         child.read();
@@ -216,31 +209,39 @@ fn run(_sdone: chan::Sender<()>) {
                         }
                     }
                     token => {
-                        // Get the telnet client from the collection
-                        let mut client = telnet_server.clients.get_mut(&token).unwrap();
+                        // Check if it is a bind socket
+                        if telnet_server.try_accept(&poll, token, history.clone()) {
+                            continue;
+                        }
+
+                        // Get client connection from the collection
+                        let mut client = telnet_server.conn(token);
+                        // If the client sent something of value, send that to the child process
+                        // Register to the event loop that we are ready to write to the child process
+                        if let Some(command) = client.read() {
+                            if client.kind == BindKind::Control {
+                                child.send(command);
+                                poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
+                                                PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                            }
+                        }
                         // Register the client connection for more reading
                         poll.reregister(client.get_stream(), token, client.interest,
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
-                        // If the client sent something of value, send that to the process
-                        // Register to the event loop since we are ready to write some data to the child process.
-                        if let Some(command) = client.read() {
-                            child.send(command);
-                            poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
-                                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
-                        }
                     }
                 }
             }
 
             if event.kind().is_writable() {
+                //println!("got write token {:?}", event.token());
                 match event.token() {
-                    TELNET_SERVER | CHILD_STDOUT | PROMPT_INPUT => {},
+                    SERVER_BIND_START | CHILD_STDOUT | PROMPT_INPUT => {},
                     CHILD_STDIN => {
                         child.write();
                     },
                     token => {
                         // Get the telnet client from the connection
-                        let mut client = telnet_server.clients.get_mut(&token).unwrap();
+                        let mut client = telnet_server.conn(token);
                         // Run the clients write method since there should be something to write
                         client.write();
                         // Reregister the client for reading.
@@ -274,7 +275,7 @@ fn run(_sdone: chan::Sender<()>) {
                         break;
                     },
                     token => {
-                        let client = telnet_server.clients.remove(&token).unwrap();
+                        let client = telnet_server.remove(token).unwrap();
                         push_info(&history, format!("[{}] Connection lost\n", client.get_addr()));
                         telnet_server.poll_clients_write(&poll);
                         poll.deregister(client.get_stream()).unwrap();
