@@ -9,6 +9,7 @@ dependencies = [
  "libc 0.2.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rust-telnet 0.0.1 (git+https://github.com/Nercury/rust-telnet.git?rev=a1b5c532cad01c26458d99667eda9429ae188e56)",
+ "slab 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "termios 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.35 (registry+https://github.com/rust-lang/crates.io-index)",
  "tty 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -12,6 +12,7 @@ repository = "https://github.com/NickeZ/rups"
 [dependencies]
 clap = "2.16.4"
 mio = "0.6.1"
+slab = "0.3.0"
 time = "0.1.35"
 tty = "0.5.0"
 chan = "0.1.18"
