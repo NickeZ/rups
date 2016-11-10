@@ -109,6 +109,9 @@ impl TelnetClient {
     pub fn write_motd(&mut self) {
         let _ = self.stream.write(b"\x1B[33m");
         let _ = self.stream.write(b"Welcome to Simple Process Server 0.0.1\r\n");
+        let _ = self.stream.write(b"Auto start is {}, Auto restart is {}\r\n");
+        let _ = self.stream.write(b"^X to kill the child, ^T to toggle auto restart\r\n");
+        let _ = self.stream.write(b"^R to (re)start the child\r\n");
         let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
         let _ = self.stream.write(b"This server was started at: ");
         let _ = self.stream.write(now.unwrap().as_bytes());

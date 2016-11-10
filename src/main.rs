@@ -26,21 +26,47 @@ use std::rc::{Rc};
 
 use clap::{Arg, App};
 use mio::*;
+use mio::timer::{Timer};
 use mio::deprecated::{PipeReader};
 use chan_signal::{Signal};
 use termios::*;
 
 use history::*;
 use telnet_server::*;
+use child::Child;
 
 // Number of connections cannot go above 10 million.
+const TIMER: Token = Token(10_000_000);
 const CHILD_STDOUT: Token = Token(10_000_001);
 const CHILD_STDIN: Token = Token(10_000_002);
 const PROMPT_INPUT: Token = Token(10_000_003);
 const SERVER_BIND_START: Token = Token(10_000_004);
 
+struct RupsApp {
+    noautorestart: bool,
+    holdoff: u64,
+    autostart: bool,
+}
+
+impl RupsApp {
+    fn new(noautorestart: bool, holdoff: u64, autostart: bool) -> RupsApp {
+        RupsApp {
+            noautorestart: noautorestart,
+            holdoff: holdoff,
+            autostart: autostart,
+        }
+    }
+}
+
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
     history.borrow_mut().push(HistoryType::Info, message);
+}
+
+fn child_select(poll:&Poll, child:&mut Child) {
+    poll.register(child.stdin(), CHILD_STDIN, Ready::writable(),
+                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
+    poll.register(child.stdout(), CHILD_STDOUT, Ready::readable(),
+                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
 }
 
 fn main() {
@@ -69,6 +95,13 @@ fn run(_sdone: chan::Sender<()>) {
                           .version("0.1.0")
                           .author("Niklas Claesson <nicke.claesson@gmail.com>")
                           .about("Rust process server")
+                          .arg(Arg::with_name("wait")
+                               .long("wait")
+                               .short("w")
+                               .help("let user start process via telnet command"))
+                          .arg(Arg::with_name("noautorestart")
+                               .long("noautorestart")
+                               .help("do not restart the child process by default"))
                           .arg(Arg::with_name("quiet")
                                .short("q")
                                .long("quiet")
@@ -101,20 +134,23 @@ fn run(_sdone: chan::Sender<()>) {
                                .short("L")
                                .long("logfile")
                                .multiple(true)
-                               .help("Bind to address (restrict to logging)")
+                               .help("Output to logfile")
                                .takes_value(true))
                           .arg(Arg::with_name("command")
                                .required(true)
                                .multiple(true))
                           .get_matches();
 
-    let commands = values_t!(matches, "command", String).unwrap();
+    let mut commands = values_t!(matches, "command", String).unwrap();
     let foreground = matches.is_present("foreground");
+
+    let mut app = RupsApp::new(matches.is_present("noautorestart"),
+                               value_t!(matches, "holdoff", u64).unwrap_or(0),
+                               !matches.is_present("wait"));
 
     let history = Rc::new(RefCell::new(History::new()));
 
-    let mut child = child::Child::new(&commands, history.clone(), foreground);
-
+    let mut child = child::Child::new(commands.remove(0), commands, history.clone(), foreground, app.autostart);
 
     let mut logaddrs:Vec<SocketAddr> = Vec::new();
     if let Ok(bindv) =  values_t!(matches, "logbind", String) {
@@ -138,9 +174,14 @@ fn run(_sdone: chan::Sender<()>) {
         }
     }
 
+
     let mut telnet_server = telnet_server::TelnetServer::new();
 
     let poll = Poll::new().unwrap();
+
+    if app.autostart {
+        child_select(&poll, &mut child);
+    }
 
     for addr in logaddrs {
         telnet_server.add_bind(&poll, addr, BindKind::Log);
@@ -151,12 +192,6 @@ fn run(_sdone: chan::Sender<()>) {
         telnet_server.add_bind(&poll, addr, BindKind::Control);
         println!("Listening on Port {}", addr);
     }
-
-    poll.register(&child.stdin, CHILD_STDIN, Ready::writable(),
-                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
-
-    poll.register(&child.stdout, CHILD_STDOUT, Ready::readable(),
-                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
 
     let mut prompt_input:Option<PipeReader> = None;
     if matches.is_present("interactive") {
@@ -174,6 +209,9 @@ fn run(_sdone: chan::Sender<()>) {
         }
     }
 
+    let mut timer = Timer::default();
+    poll.register(&timer, TIMER, Ready::readable(), PollOpt::edge()).unwrap();
+
     let mut events = Events::with_capacity(1_024);
     loop {
         poll.poll(&mut events, None).unwrap();
@@ -182,13 +220,17 @@ fn run(_sdone: chan::Sender<()>) {
             if event.kind().is_readable() {
                 //println!("got read token {:?}", token);
                 match event.token() {
+                    TIMER => {
+                        child = Child::new_from_child(child);
+                        child_select(&poll, &mut child);
+                    },
                     CHILD_STDOUT => {
                         // Read from the child process
                         child.read();
                         // We are ready to write data to telnet connections
                         telnet_server.poll_clients_write(&poll);
                         // We are also ready to get more data from the child process
-                        poll.reregister(&child.stdout, CHILD_STDOUT, Ready::readable(),
+                        poll.reregister(child.stdout(), CHILD_STDOUT, Ready::readable(),
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     },
                     CHILD_STDIN => { unreachable!() },
@@ -199,8 +241,9 @@ fn run(_sdone: chan::Sender<()>) {
                             match String::from_utf8(buffer[0..len].to_vec()) {
                                 Err(why) => println!("Failed to parse utf8: {}", why),
                                 Ok(line) => {
+
                                     child.send(line);
-                                    poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
+                                    poll.reregister(child.stdin(), CHILD_STDIN, Ready::writable(),
                                                     PollOpt::edge() | PollOpt::oneshot()).unwrap();
                                 }
                             };
@@ -220,9 +263,25 @@ fn run(_sdone: chan::Sender<()>) {
                         // Register to the event loop that we are ready to write to the child process
                         if let Some(command) = client.read() {
                             if client.kind == BindKind::Control {
-                                child.send(command);
-                                poll.reregister(&child.stdin, CHILD_STDIN, Ready::writable(),
-                                                PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                                println!("command: {:?}", command);
+                                match command.as_ref() {
+                                    "\x12" => { // Ctrl-R
+                                        child = Child::new_from_child(child);
+                                        child_select(&poll, &mut child);
+                                    },
+                                    "\x14" => { // Ctrl-T
+                                        app.noautorestart = ! app.noautorestart;
+                                    },
+                                    "\x18" => { // Ctrl-X
+                                        child.kill();
+                                    },
+                                    _ => {},
+                                };
+                                if child.is_alive() {
+                                    child.send(command);
+                                    poll.reregister(child.stdin(), CHILD_STDIN, Ready::writable(),
+                                                    PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                                }
                             }
                         }
                         // Register the client connection for more reading
@@ -236,6 +295,7 @@ fn run(_sdone: chan::Sender<()>) {
                 //println!("got write token {:?}", event.token());
                 match event.token() {
                     SERVER_BIND_START | CHILD_STDOUT | PROMPT_INPUT => {},
+                    TIMER => {},
                     CHILD_STDIN => {
                         child.write();
                     },
@@ -255,25 +315,34 @@ fn run(_sdone: chan::Sender<()>) {
             if event.kind().is_hup() {
                 match event.token() {
                     CHILD_STDOUT | CHILD_STDIN => {
-                        // Notify all clients that process died
-                        push_info(&history, String::from("Process died, restarting...\n"));
-                        telnet_server.poll_clients_write(&poll);
-
                         // Clean out the old process
-                        poll.deregister(&child.stdout).unwrap();
-                        poll.deregister(&child.stdin).unwrap();
-                        child.wait().expect("Failed to wait on child");
+                        poll.deregister(child.stdout()).unwrap();
+                        poll.deregister(child.stdin()).unwrap();
+                        child.kill();
+                        {
+                            let exit_status = child.wait();
+
+                            // Notify all clients that process died
+                            push_info(&history, String::from(format!("Process died with exit status {}\n", exit_status)));
+                            telnet_server.poll_clients_write(&poll);
+                        }
 
                         // Create a new process
-                        child = child::Child::new(&commands, history.clone(), foreground);
-                        poll.register(&child.stdin, CHILD_STDIN, Ready::writable(),
-                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
-                        poll.register(&child.stdout, CHILD_STDOUT, Ready::readable(),
-                                      PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        if ! app.noautorestart {
+                            if app.holdoff > 0 {
+                                timer.set_timeout(std::time::Duration::from_secs(app.holdoff), "execute").unwrap();
+                                push_info(&history, String::from(format!("Restarting in {} seconds\n", app.holdoff)));
+                                telnet_server.poll_clients_write(&poll);
+                            } else {
+                                child = Child::new_from_child(child);
+                                child_select(&poll, &mut child);
+                            }
+                        }
                     },
                     PROMPT_INPUT => {
                         break;
                     },
+                    TIMER => {},
                     token => {
                         let client = telnet_server.remove(token).unwrap();
                         push_info(&history, format!("[{}] Connection lost\n", client.get_addr()));

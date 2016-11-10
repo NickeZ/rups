@@ -13,49 +13,64 @@ use history::{History, HistoryType};
 
 #[allow(dead_code)]
 pub struct Child {
-    child: process::Child,
-    ttyserver: TtyServer,
-    pub stdin: PipeWriter,
-    pub stdout: PipeReader,
+    executable: String,
+    args: Vec<String>,
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
     foreground: bool,
+    ttyserver: TtyServer,
+    child: Option<process::Child>,
+    exit_status: Option<process::ExitStatus>,
+    stdin: PipeWriter,
+    stdout: PipeReader,
 }
 
 impl Child {
-    pub fn new(commands:&Vec<String>, history:Rc<RefCell<History>>, foreground:bool) -> Child {
-        let (executable, args) = commands.split_first().unwrap();
-        let mut command = Command::new(executable);
+    pub fn new(executable:String, args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, spawn:bool) -> Child {
+        let mut command = Command::new(&executable);
         if args.len() > 0 {
             command.args(&args);
         }
+        let mut ttyserver = match TtyServer::new(None as Option<&FileDesc>) {
+            Err(why) => panic!("Error, could not open tty: {}", why),
+            Ok(s) => s,
+        };
         // TODO: figure out if there are any benefits to inherit from stdin..
         //let stdin = FileDesc::new(libc::STDOUT_FILENO, false);
         //let mut ttyserver = match TtyServer::new(Some(&stdin)) {
-        let mut ttyserver = match TtyServer::new(None as Option<&FileDesc>) {
-            Ok(s) => s,
-            Err(why) => panic!("Error, could not open tty: {}", why),
-        };
-        let child = match ttyserver.spawn(command) {
-            Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
-            Ok(p) => p,
+        let mut child = None;
+        if spawn {
+            match ttyserver.spawn(command) {
+                Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
+                Ok(p) => {
+                    child = Some(p);
+                    history.borrow_mut().push(
+                        HistoryType::Info,
+                        format!("Successfully launched {}!\n", executable));
+                }
+            };
         };
 
-        history.borrow_mut().push(HistoryType::Info, format!("Successfully launched {}!\n",
-                                                             executable));
         let fd = FileDesc::new(ttyserver.get_master().as_raw_fd(), false);
         let fd2 = fd.dup().unwrap();
-        let child_stdin = unsafe { PipeWriter::from_raw_fd(fd.as_raw_fd())};
-        let child_stdout = unsafe { PipeReader::from_raw_fd(fd2.as_raw_fd())};
+        let stdin = unsafe { PipeWriter::from_raw_fd(fd.as_raw_fd())};
+        let stdout = unsafe { PipeReader::from_raw_fd(fd2.as_raw_fd())};
         Child {
-            child: child,
-            ttyserver: ttyserver,
-            stdin: child_stdin,
-            stdout: child_stdout,
+            executable: executable,
+            args: args,
             history: history,
             mailbox: Vec::new(),
             foreground: foreground,
+            ttyserver: ttyserver,
+            child: child,
+            exit_status: None,
+            stdin: stdin,
+            stdout: stdout,
         }
+    }
+
+    pub fn new_from_child(other: Child) -> Child {
+        Child::new(other.executable, other.args, other.history, other.foreground, true)
     }
 
     pub fn read(&mut self) {
@@ -76,6 +91,24 @@ impl Child {
         self.history.borrow_mut().push(HistoryType::Child, line);
     }
 
+    pub fn stdin(&self) -> &PipeWriter {
+        &self.stdin
+    }
+
+    pub fn stdout(&self) -> &PipeReader {
+        &self.stdout
+    }
+
+    pub fn kill(&mut self) {
+        if self.is_alive() {
+            self.child.as_mut().unwrap().kill().expect("Failed to kill process");
+        }
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.child.is_some() && self.exit_status.is_none()
+    }
+
     pub fn send(&mut self, msg:String) {
         self.mailbox.push(msg);
     }
@@ -86,8 +119,13 @@ impl Child {
         }
     }
 
-    pub fn wait(&mut self) -> Result<ExitStatus, io::Error> {
-        self.child.wait()
+    pub fn wait(&mut self) -> &ExitStatus {
+        if self.exit_status.is_some() {
+            return self.exit_status.as_ref().unwrap();
+        } else {
+            self.exit_status = Some(self.child.as_mut().unwrap().wait().expect("Failed to wait on child"));
+        }
+        self.exit_status.as_ref().unwrap()
     }
 }
 
