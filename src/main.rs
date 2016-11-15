@@ -19,10 +19,11 @@ mod child;
 
 use std::io::prelude::*;
 use std::os::unix::io::{FromRawFd};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, IpAddr};
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
+use std::str::{FromStr};
 
 use clap::{Arg, App};
 use mio::*;
@@ -128,7 +129,7 @@ fn run(_sdone: chan::Sender<()>) {
                                .short("l")
                                .long("logbind")
                                .multiple(true)
-                               .help("Bind to address (restrict to logging)")
+                               .help("Bind to address for log output (ignore any received data)")
                                .takes_value(true))
                           .arg(Arg::with_name("logfile")
                                .short("L")
@@ -158,7 +159,11 @@ fn run(_sdone: chan::Sender<()>) {
             if let Ok(addr) = bind.parse() {
                 logaddrs.push(addr);
             } else {
-                // TODO: Parse it as a unix socket instead..
+                if let Ok(port) = bind.parse() {
+                    logaddrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
+                } else {
+                    // TODO: Parse it as a unix socket instead..
+                }
             }
         }
     }
@@ -169,7 +174,11 @@ fn run(_sdone: chan::Sender<()>) {
             if let Ok(addr) = bind.parse() {
                 addrs.push(addr);
             } else {
-                // TODO: Parse it as a unix socket instead..
+                if let Ok(port) = bind.parse() {
+                    logaddrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
+                } else {
+                    // TODO: Parse it as a unix socket instead..
+                }
             }
         }
     }
