@@ -37,12 +37,13 @@ pub struct TelnetClient {
 impl TelnetClient {
     pub fn new(stream:TcpStream, addr: SocketAddr,
                history:Rc<RefCell<History>>, kind:BindKind) -> TelnetClient {
+        let cursor = history.borrow_mut().get_offset();
         TelnetClient {
             stream: stream,
             addr: addr,
             interest: Ready::writable(),
             history: history,
-            cursor:0,
+            cursor:cursor,
             state: ClientState::Connected,
             tokenizer: TelnetTokenizer::new(),
             server_echo: true,

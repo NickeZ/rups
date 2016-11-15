@@ -144,6 +144,10 @@ fn run(_sdone: chan::Sender<()>) {
                                .multiple(true)
                                .help("Output to logfile")
                                .takes_value(true))
+                          .arg(Arg::with_name("histsize")
+                               .long("histsize")
+                               .help("Set maximum telnet packets to remember")
+                               .takes_value(true))
                           .arg(Arg::with_name("command")
                                .required(true)
                                .multiple(true))
@@ -156,7 +160,8 @@ fn run(_sdone: chan::Sender<()>) {
                                value_t!(matches, "holdoff", u64).unwrap_or(0),
                                !matches.is_present("wait"));
 
-    let history = Rc::new(RefCell::new(History::new()));
+    let histsize = value_t!(matches, "histsize", usize).unwrap_or(20000);
+    let history = Rc::new(RefCell::new(History::new(histsize)));
 
     let mut child = child::Child::new(commands.remove(0), commands, history.clone(), foreground, app.autostart);
 
