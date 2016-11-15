@@ -1,13 +1,13 @@
-#[macro_use]
-extern crate clap;
+#[macro_use] extern crate log;
+extern crate env_logger;
+#[macro_use] extern crate clap;
 extern crate mio;
 extern crate slab;
 extern crate time;
 extern crate rust_telnet as telnet;
 extern crate tty;
 extern crate fd;
-#[macro_use]
-extern crate chan;
+#[macro_use] extern crate chan;
 extern crate chan_signal;
 extern crate libc;
 extern crate termios;
@@ -31,6 +31,7 @@ use mio::timer::{Timer};
 use mio::deprecated::{PipeReader};
 use chan_signal::{Signal};
 use termios::*;
+use log::LogLevel;
 
 use history::*;
 use telnet_server::*;
@@ -71,6 +72,7 @@ fn child_select(poll:&Poll, child:&mut Child) {
 }
 
 fn main() {
+    env_logger::init().unwrap();
     // Store the old termios settings, we might change them
     let mut termios = None;
     if unsafe{libc::isatty(libc::STDIN_FILENO)} == 1 {
@@ -231,6 +233,7 @@ fn run(_sdone: chan::Sender<()>) {
         poll.poll(&mut events, None).unwrap();
 
         for event in &events {
+            debug!("Event loop {:?}", event);
             if event.kind().is_readable() {
                 //println!("got read token {:?}", token);
                 match event.token() {
@@ -277,7 +280,7 @@ fn run(_sdone: chan::Sender<()>) {
                         // Register to the event loop that we are ready to write to the child process
                         if let Some(command) = client.read() {
                             if client.kind == BindKind::Control {
-                                println!("command: {:?}", command);
+                                debug!("read command from telnetclient: {:?}", command);
                                 match command.as_ref() {
                                     "\x12" => { // Ctrl-R
                                         child = Child::new_from_child(child);

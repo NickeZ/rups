@@ -10,6 +10,8 @@ homepage = "https://github.com/NickeZ/rups"
 repository = "https://github.com/NickeZ/rups"
 
 [dependencies]
+log = "0.3.6"
+env_logger = "0.3.5"
 clap = "2.16.4"
 mio = "0.6.1"
 slab = "0.3.0"

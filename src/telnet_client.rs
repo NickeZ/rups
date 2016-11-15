@@ -64,22 +64,23 @@ impl TelnetClient {
         match self.stream.read(&mut buffer) {
             Err(why) => println!("Failed to read stream: {}", why),
             Ok(len) => {
-                // Create a temporary String to convert the buffer from
-                let mut content = String::new();
+                let mut content = None;
                 for token in self.tokenizer.tokenize(&buffer[0..len]) {
                     match token {
                         TelnetToken::Text(text) => {
-                            //println!("token text: {:?}", text);
+                            // Create a temporary String to convert the buffer from
+                            content = Some(String::new());
+                            debug!("token text: {:?}", text);
                             // Every time we receive a token that begins with a CR we send
                             // a newline instead to the process since the process runs on Linux.
                             if text[0] == '\r' as u8 {
-                                content.push(LINESEP);
+                                content.as_mut().unwrap().push(LINESEP);
                             } else {
-                                content.push_str(str::from_utf8(text).unwrap());
+                                content.as_mut().unwrap().push_str(str::from_utf8(text).unwrap());
                             }
                         },
                         TelnetToken::Command(command) => {
-                            println!("Command {:?}", command);
+                            debug!("Telnet Command {:?}", command);
                         },
                         TelnetToken::Negotiation{command, channel} => {
                             match (command, channel) {
@@ -90,7 +91,7 @@ impl TelnetClient {
                                     self.server_echo = false
                                 },
                                 (IAC::DO, 3) | (IAC::DONT, 3) => {},
-                                _ => println!("Unsupported Negotiation {:?} {}", command, channel),
+                                _ => debug!("Unsupported Negotiation {:?} {}", command, channel),
                             }
                         }
                     }
@@ -100,7 +101,7 @@ impl TelnetClient {
                 if len == 0 {
                     self.interest = self.interest | Ready::hup();
                 }
-                return Some(content);
+                return content;
             }
         }
         None
