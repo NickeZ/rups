@@ -61,10 +61,10 @@ impl TelnetServer {
                 },
             };
             // Insert new client into client collection
-            let interest = Ready::writable();
-            let client = TelnetClient::new(client_stream, client_addr, interest, history, *kind);
+            let client = TelnetClient::new(client_stream, client_addr, history, *kind);
             if let Ok(new_token) = self.clients.insert(client) {
-                poll.register(self.clients[new_token].get_stream(), new_token, interest,
+                let client = &self.clients[new_token];
+                poll.register(client.get_stream(), new_token, client.interest,
                                 PollOpt::edge() | PollOpt::oneshot()).unwrap();
             };
             return true;

@@ -292,13 +292,14 @@ fn run(_sdone: chan::Sender<()>) {
                                     "\x18" => { // Ctrl-X
                                         child.kill();
                                     },
-                                    _ => {},
+                                    _ => {
+                                        if child.is_alive() {
+                                            child.send(command);
+                                            poll.reregister(child.stdin(), CHILD_STDIN, Ready::writable(),
+                                                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                                        }
+                                    },
                                 };
-                                if child.is_alive() {
-                                    child.send(command);
-                                    poll.reregister(child.stdin(), CHILD_STDIN, Ready::writable(),
-                                                    PollOpt::edge() | PollOpt::oneshot()).unwrap();
-                                }
                             }
                         }
                         // Register the client connection for more reading

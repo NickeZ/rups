@@ -35,12 +35,12 @@ pub struct TelnetClient {
 }
 
 impl TelnetClient {
-    pub fn new(stream:TcpStream, addr: SocketAddr, interest:Ready,
+    pub fn new(stream:TcpStream, addr: SocketAddr,
                history:Rc<RefCell<History>>, kind:BindKind) -> TelnetClient {
         TelnetClient {
             stream: stream,
             addr: addr,
-            interest: interest,
+            interest: Ready::writable(),
             history: history,
             cursor:0,
             state: ClientState::Connected,
@@ -96,7 +96,7 @@ impl TelnetClient {
                         }
                     }
                 }
-                self.interest = Ready::writable();
+                self.interest = Ready::readable();
                 // If we receive a zero length string we interpret that as connection lost.
                 if len == 0 {
                     self.interest = self.interest | Ready::hup();
