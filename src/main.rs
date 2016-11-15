@@ -72,7 +72,10 @@ fn child_select(poll:&Poll, child:&mut Child) {
 
 fn main() {
     // Store the old termios settings, we might change them
-    let termios = Termios::from_fd(libc::STDIN_FILENO).unwrap();
+    let mut termios = None;
+    if unsafe{libc::isatty(libc::STDIN_FILENO)} == 1 {
+        termios = Some(Termios::from_fd(libc::STDIN_FILENO).unwrap());
+    }
     let signal = chan_signal::notify(&[Signal::INT, Signal::TERM]);
 
     let(sdone, rdone) = chan::sync(0);
@@ -88,7 +91,9 @@ fn main() {
         }
     }
     // Reset the termios after exiting
-    let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, &termios).unwrap();
+    if let Some(ref termios) = termios {
+        let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, termios).unwrap();
+    }
 }
 
 fn run(_sdone: chan::Sender<()>) {
