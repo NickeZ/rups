@@ -180,7 +180,7 @@ fn run(_sdone: chan::Sender<()>) {
                 addrs.push(addr);
             } else {
                 if let Ok(port) = bind.parse() {
-                    logaddrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
+                    addrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
                 } else {
                     // TODO: Parse it as a unix socket instead..
                 }
