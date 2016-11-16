@@ -63,8 +63,9 @@ impl TelnetServer {
             // Insert new client into client collection
             let client = TelnetClient::new(client_stream, client_addr, history, *kind);
             if let Ok(new_token) = self.clients.insert(client) {
-                let client = &self.clients[new_token];
-                poll.register(client.get_stream(), new_token, client.interest,
+                let client = &mut self.clients[new_token];
+                client.set_token(new_token);
+                poll.register(client.get_stream(), new_token, Ready::writable(),
                                 PollOpt::edge() | PollOpt::oneshot()).unwrap();
             };
             return true;
@@ -87,8 +88,9 @@ impl TelnetServer {
     */
 
     pub fn poll_clients_write(&self, poll:& Poll){
-        for (tok, client) in self.clients.into_iter().enumerate() {
-            poll.reregister(client.get_stream(), Token(tok), Ready::writable(),
+        for client in self.clients.iter() {
+            debug!("registering {:?} for writing", client.get_token().unwrap());
+            poll.reregister(client.get_stream(), client.get_token().unwrap(), Ready::writable(),
                             PollOpt::edge() | PollOpt::oneshot()).unwrap();
         }
     }

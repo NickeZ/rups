@@ -274,18 +274,20 @@ fn run(_sdone: chan::Sender<()>) {
                         }
                     }
                     token => {
-                        // Check if it is a bind socket
+                        // Check if the token is a server token and accept the new connection.
                         if telnet_server.try_accept(&poll, token, history.clone()) {
                             continue;
                         }
 
-                        // Get client connection from the collection
+                        // If something of value was recieved from the client,
+                        // send that to the child process.
                         let mut client = telnet_server.conn(token);
-                        // If the client sent something of value, send that to the child process
-                        // Register to the event loop that we are ready to write to the child process
+                        let mut interest = Ready::readable();
                         if let Some(command) = client.read() {
-                            if client.kind == BindKind::Control {
-                                debug!("read command from telnetclient: {:?}", command);
+                            if command.is_empty() {
+                                interest = interest | Ready::hup();
+                            } else if client.kind == BindKind::Control {
+                                debug!("read from telnetclient: {:?}", command);
                                 match command.as_ref() {
                                     "\x12" => { // Ctrl-R
                                         child = Child::new_from_child(child);
@@ -308,7 +310,7 @@ fn run(_sdone: chan::Sender<()>) {
                             }
                         }
                         // Register the client connection for more reading
-                        poll.reregister(client.get_stream(), token, client.interest,
+                        poll.reregister(client.get_stream(), token, interest,
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     }
                 }
@@ -329,7 +331,7 @@ fn run(_sdone: chan::Sender<()>) {
                         client.write();
                         // Reregister the client for reading.
                         poll.reregister(client.get_stream(), token,
-                                        client.interest,
+                                        Ready::readable(),
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
                     }
                 }
@@ -367,10 +369,13 @@ fn run(_sdone: chan::Sender<()>) {
                     },
                     TIMER => {},
                     token => {
+                        // Remove the client from the slab
                         let client = telnet_server.remove(token).unwrap();
+                        // Deregister the client from the event loop
+                        poll.deregister(client.get_stream()).unwrap();
+                        // Notify the other clients that this client is gone
                         push_info(&history, format!("[{}] Connection lost\n", client.get_addr()));
                         telnet_server.poll_clients_write(&poll);
-                        poll.deregister(client.get_stream()).unwrap();
                     }
                 }
             }

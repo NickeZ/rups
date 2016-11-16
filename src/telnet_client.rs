@@ -6,7 +6,7 @@ use std::{str};
 use mio::*;
 use mio::tcp::{TcpStream};
 use telnet::parser::{TelnetTokenizer, TelnetToken};
-use telnet::iac::*;
+use telnet::iac;
 use time;
 
 use history::HistoryType;
@@ -15,6 +15,9 @@ use history::History;
 use telnet_server::*;
 
 const LINESEP:char = '\n';
+const ECHO_DATA:u8 = 1;
+const SUPPRESS_GA:u8 = 3;
+const IAC:u8 = 0xff;
 
 #[derive(PartialEq)]
 enum ClientState {
@@ -23,9 +26,9 @@ enum ClientState {
 }
 
 pub struct TelnetClient {
+    token: Option<Token>,
     addr: SocketAddr,
     stream: TcpStream,
-    pub interest: Ready,
     history: Rc<RefCell<History>>,
     cursor: usize,
     state: ClientState,
@@ -39,9 +42,9 @@ impl TelnetClient {
                history:Rc<RefCell<History>>, kind:BindKind) -> TelnetClient {
         let cursor = history.borrow_mut().get_offset();
         TelnetClient {
+            token: None,
             stream: stream,
             addr: addr,
-            interest: Ready::writable(),
             history: history,
             cursor:cursor,
             state: ClientState::Connected,
@@ -51,6 +54,12 @@ impl TelnetClient {
         }
     }
 
+    pub fn get_token(&self) -> Option<Token> {
+        self.token
+    }
+    pub fn set_token(&mut self, token:Token) {
+        self.token = Some(token);
+    }
     pub fn get_stream(&self) -> &TcpStream {
         &self.stream
     }
@@ -63,46 +72,50 @@ impl TelnetClient {
         // Create a temporary buffer to read into
         let mut buffer = [0;2048];
         match self.stream.read(&mut buffer) {
-            Err(why) => println!("Failed to read stream: {}", why),
+            Err(why) => error!("Failed to read stream: {}", why),
             Ok(len) => {
-                let mut content = None;
+                // Create a temporary String to concatenate the text tokens in
+                let mut content = String::new();
+                if len == 0 {
+                    // If we read 0 bytes the other end probably hung up.
+                    // Return an empty string.
+                    return Some(content)
+                }
                 for token in self.tokenizer.tokenize(&buffer[0..len]) {
                     match token {
                         TelnetToken::Text(text) => {
-                            // Create a temporary String to convert the buffer from
-                            content = Some(String::new());
                             debug!("token text: {:?}", text);
                             // Every time we receive a token that begins with a CR we send
                             // a newline instead to the process since the process runs on Linux.
                             if text[0] == '\r' as u8 {
-                                content.as_mut().unwrap().push(LINESEP);
+                                content.push(LINESEP);
                             } else {
-                                content.as_mut().unwrap().push_str(str::from_utf8(text).unwrap());
+                                match str::from_utf8(text) {
+                                    Err(why) => error!("Failed to parse {:?}: {}", text, why),
+                                    Ok(text) => {
+                                        content.push_str(text);
+                                    }
+                                }
                             }
                         },
                         TelnetToken::Command(command) => {
-                            debug!("Telnet Command {:?}", command);
+                            warn!("Unkown telnet Command {:?}", command);
                         },
                         TelnetToken::Negotiation{command, channel} => {
                             match (command, channel) {
-                                (IAC::DO, 1) => {
+                                (iac::IAC::DO, ECHO_DATA) => {
                                     self.server_echo = true
                                 },
-                                (IAC::DONT, 1) => {
+                                (iac::IAC::DONT, ECHO_DATA) => {
                                     self.server_echo = false
                                 },
-                                (IAC::DO, 3) | (IAC::DONT, 3) => {},
-                                _ => debug!("Unsupported Negotiation {:?} {}", command, channel),
+                                (iac::IAC::DO, SUPPRESS_GA) | (iac::IAC::DONT, SUPPRESS_GA) => {},
+                                _ => warn!("Unknown negotiation command {:?} {}", command, channel),
                             }
                         }
                     }
                 }
-                self.interest = Ready::readable();
-                // If we receive a zero length string we interpret that as connection lost.
-                if len == 0 {
-                    self.interest = self.interest | Ready::hup();
-                }
-                return content;
+                return Some(content);
             }
         }
         None
@@ -118,8 +131,8 @@ impl TelnetClient {
         let _ = self.stream.write(b"This server was started at: ");
         let _ = self.stream.write(now.unwrap().as_bytes());
         let _ = self.stream.write(b"\x1B[0m\r\n");
-        let _ = self.stream.write(&[0xff, IAC::WILL, 1]);
-        let _ = self.stream.write(&[0xff, IAC::WILL, 3]);
+        let _ = self.stream.write(&[IAC, iac::IAC::WILL, ECHO_DATA]);
+        let _ = self.stream.write(&[IAC, iac::IAC::WILL, SUPPRESS_GA]);
     }
 
     pub fn write(&mut self) {
@@ -138,6 +151,5 @@ impl TelnetClient {
             let _ = self.stream.write(b"\x1B[0m");
             self.cursor += 1;
         }
-        self.interest = Ready::readable();
     }
 }
