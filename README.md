@@ -1,6 +1,6 @@
-[![Build Status](https://travis-ci.org/NickeZ/rups.svg?branch=master)](https://travis-ci.org/NickeZ/rups)
-
 # Rups
+
+[![Build Status](https://travis-ci.org/NickeZ/rups.svg?branch=master)](https://travis-ci.org/NickeZ/rups)
 
 This is an attempt to write an event-driven
 [procServ(1)](https://linux.die.net/man/1/procserv) implementation in rust.
