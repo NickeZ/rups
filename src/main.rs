@@ -355,7 +355,7 @@ fn run(_sdone: chan::Sender<()>) {
                             let exit_status = child.wait();
 
                             // Notify all clients that process died
-                            push_info(&history, String::from(format!("Process died with exit status {}\n", exit_status)));
+                            push_info(&history, String::from(format!("Process died with exit status {}\r\n", exit_status)));
                             telnet_server.poll_clients_write(&poll);
                         }
 
@@ -363,7 +363,7 @@ fn run(_sdone: chan::Sender<()>) {
                         if ! app.noautorestart {
                             if app.holdoff > 0 {
                                 timer.set_timeout(std::time::Duration::from_secs(app.holdoff), "execute").unwrap();
-                                push_info(&history, String::from(format!("Restarting in {} seconds\n", app.holdoff)));
+                                push_info(&history, String::from(format!("Restarting in {} seconds\r\n", app.holdoff)));
                                 telnet_server.poll_clients_write(&poll);
                             } else {
                                 child = Child::new_from_child(child);
@@ -381,7 +381,7 @@ fn run(_sdone: chan::Sender<()>) {
                         // Deregister the client from the event loop
                         poll.deregister(client.get_stream()).unwrap();
                         // Notify the other clients that this client is gone
-                        push_info(&history, format!("[{}] Connection lost\n", client.get_addr()));
+                        push_info(&history, format!("[{}] Connection lost\r\n", client.get_addr()));
                         telnet_server.poll_clients_write(&poll);
                     }
                 }

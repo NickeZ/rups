@@ -57,7 +57,7 @@ impl TelnetServer {
                     return false;
                 },
                 Ok((stream, addr)) => {
-                    ::push_info(&history, format!("[{}] Connection established\n", addr));
+                    ::push_info(&history, format!("[{}] Connection established\r\n", addr));
                     self.poll_clients_write(&poll);
                     (stream, addr)
                 },

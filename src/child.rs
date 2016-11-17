@@ -46,7 +46,7 @@ impl Child {
                     child = Some(p);
                     history.borrow_mut().push(
                         HistoryType::Info,
-                        format!("Successfully launched {}!\n", executable));
+                        format!("Successfully launched {}!\r\n", executable));
                 }
             };
         };
