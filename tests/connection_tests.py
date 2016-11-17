@@ -8,49 +8,54 @@ import subprocess
 import time
 import signal
 import pprint # Dev import
+import telnetlib
 
-TOP_DIR = path.join('..')
 RUPS_BIN = path.join('target', 'debug', 'rups')
 TELNET_BIN = 'telnet'
 
 def single_controller(port, puts, expected):
     """Start a single controlling process"""
     print("Launching controller")
-    proc = subprocess.Popen([TELNET_BIN, '127.0.0.1', port], stdin=subprocess.PIPE,
-                            stdout=subprocess.PIPE)
+    client = telnetlib.Telnet('127.0.0.1', port)
     if puts:
         for line in puts:
-            proc.stdin.write(line)
+            client.write(line)
+            client.write('\r')
 
-    for line in expected:
-        out = proc.stdout.readline()
+    lines = client.read_all().split('\r\n')
+    # Skip 5 lines, motd
+    for (line, out) in zip(expected, lines[5:]):
+        #print(":".join("{:02x}".format(ord(c)) for c in out))
+        if len(out) == 0:
+            print("got 0 length string..")
         if out != line:
-            print("{} != {}".format(out, line))
-
-    proc.wait()
+            print("fail {} != {}".format(out, line))
+        else:
+            print("success {} == {}".format(out, line))
 
 def single_logger(port, expected):
     """Start a single logging process"""
     print("Launching logger")
-    proc = subprocess.Popen([TELNET_BIN, '127.0.0.1', port], stdout=subprocess.PIPE)
-    for line in expected:
-        out = proc.stdout.readline()
+    client = telnetlib.Telnet('127.0.0.1', port)
+    lines = client.read_all().split('\r\n')
+    # Skip 5 lines, motd
+    for (line, out) in zip(expected, lines[5:]):
+        #print(":".join("{:02x}".format(ord(c)) for c in out))
         if out != line:
-            print("{} != {}".format(out, line))
-
-    proc.wait()
+            print("fail {} != {}".format(out, line))
+        else:
+            print("success {} == {}".format(out, line))
 
 def execute_test(n_controllers, n_loggers):
     """Test function"""
     # Run RUPS
-    server = subprocess.Popen([path.join(TOP_DIR, RUPS_BIN), 'cat', '--bind', '3000', '--logbind',
+    server = subprocess.Popen([path.join(RUPS_BIN), '--noinfo', 'cat', '--bind', '3000', '--logbind',
                                '4000'],
                               stdout=stdout.fileno(), stdin=subprocess.PIPE)
-    time.sleep(2)
+    time.sleep(1)
 
     stimuli = ['Hello world!']
-    expected = ["Trying 127.0.0.1...\n", "Connected to 127.0.0.1.\n", "Escape character is '^]'.\n"]
-    expected.extend(stimuli)
+    expected = stimuli[:] + stimuli[:]
 
     # Run first controller that will output something
     threads = []
@@ -71,7 +76,7 @@ def execute_test(n_controllers, n_loggers):
         thread.start()
         threads.append(thread)
 
-    time.sleep(10)
+    time.sleep(3)
     print("Sending INTERRUPT to server")
     server.send_signal(signal.SIGINT)
     server.wait()
@@ -85,8 +90,8 @@ def execute_test(n_controllers, n_loggers):
 def main(args):
     """Main function"""
     parser = argparse.ArgumentParser(description='Test multiple connections')
-    parser.add_argument('-n', help='Number of control telnet clients', default=1)
-    parser.add_argument('-m', help='Number of log telnet clients', default=1)
+    parser.add_argument('-n', help='Number of control telnet clients', default=1, type=int)
+    parser.add_argument('-m', help='Number of log telnet clients', default=1, type=int)
 
     args = parser.parse_args(args)
 
