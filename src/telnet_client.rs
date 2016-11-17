@@ -35,11 +35,12 @@ pub struct TelnetClient {
     tokenizer: TelnetTokenizer,
     server_echo: bool,
     pub kind: BindKind,
+    noinfo: bool,
 }
 
 impl TelnetClient {
     pub fn new(stream:TcpStream, addr: SocketAddr,
-               history:Rc<RefCell<History>>, kind:BindKind) -> TelnetClient {
+               history:Rc<RefCell<History>>, kind:BindKind, noinfo:bool) -> TelnetClient {
         let cursor = history.borrow_mut().get_offset();
         TelnetClient {
             token: None,
@@ -51,6 +52,7 @@ impl TelnetClient {
             tokenizer: TelnetTokenizer::new(),
             server_echo: true,
             kind: kind,
+            noinfo: noinfo,
         }
     }
 
@@ -141,14 +143,15 @@ impl TelnetClient {
             self.state = ClientState::HasSentMotd;
         }
         for line in self.history.borrow_mut().get_from(self.cursor) {
-            let preamble = match line.0 {
-                HistoryType::Child => b"\x1B[39m",
-                HistoryType::Info => b"\x1B[33m",
-            };
-            //let _ = self.stream.write(b"\r\n");
-            let _ = self.stream.write(preamble);
-            let _ = self.stream.write(line.1.replace("\n", "\r\n").as_bytes());
-            let _ = self.stream.write(b"\x1B[0m");
+            if ! (line.0 == HistoryType::Info && self.noinfo) {
+                if line.0 == HistoryType::Info {
+                    let _ = self.stream.write(b"\x1B[33m");
+                }
+                let _ = self.stream.write(line.1.as_bytes());
+                if line.0 == HistoryType::Info {
+                    let _ = self.stream.write(b"\x1B[0m");
+                }
+            }
             self.cursor += 1;
         }
     }

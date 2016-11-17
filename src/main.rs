@@ -48,14 +48,16 @@ struct RupsApp {
     noautorestart: bool,
     holdoff: u64,
     autostart: bool,
+    noinfo: bool,
 }
 
 impl RupsApp {
-    fn new(noautorestart: bool, holdoff: u64, autostart: bool) -> RupsApp {
+    fn new(noautorestart: bool, holdoff: u64, autostart: bool, noinfo: bool) -> RupsApp {
         RupsApp {
             noautorestart: noautorestart,
             holdoff: holdoff,
             autostart: autostart,
+            noinfo: noinfo,
         }
     }
 }
@@ -114,6 +116,10 @@ fn run(_sdone: chan::Sender<()>) {
                                .short("q")
                                .long("quiet")
                                .help("suppress messages (server)"))
+                          .arg(Arg::with_name("noinfo")
+                               .short("n")
+                               .long("noinfo")
+                               .help("suppress messages (clients)"))
                           .arg(Arg::with_name("foreground")
                                .short("f")
                                .long("foreground")
@@ -158,7 +164,8 @@ fn run(_sdone: chan::Sender<()>) {
 
     let mut app = RupsApp::new(matches.is_present("noautorestart"),
                                value_t!(matches, "holdoff", u64).unwrap_or(0),
-                               !matches.is_present("wait"));
+                               !matches.is_present("wait"),
+                               matches.is_present("noinfo"));
 
     let histsize = value_t!(matches, "histsize", usize).unwrap_or(20000);
     let history = Rc::new(RefCell::new(History::new(histsize)));
@@ -196,7 +203,7 @@ fn run(_sdone: chan::Sender<()>) {
     }
 
 
-    let mut telnet_server = telnet_server::TelnetServer::new();
+    let mut telnet_server = telnet_server::TelnetServer::new(app.noinfo);
 
     let poll = Poll::new().unwrap();
 

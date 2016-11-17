@@ -21,14 +21,16 @@ pub struct TelnetServer {
     sockets: HashMap<Token, (TcpListener, BindKind)>,
     clients: Slab<TelnetClient>,
     token_counter: usize,
+    noinfo: bool,
 }
 
 impl TelnetServer {
-    pub fn new() -> TelnetServer {
+    pub fn new(noinfo: bool) -> TelnetServer {
         TelnetServer {
             sockets: HashMap::new(),
             clients: Slab::with_capacity(1024),
             token_counter: ::SERVER_BIND_START.0,
+            noinfo: noinfo,
         }
     }
 
@@ -61,7 +63,7 @@ impl TelnetServer {
                 },
             };
             // Insert new client into client collection
-            let client = TelnetClient::new(client_stream, client_addr, history, *kind);
+            let client = TelnetClient::new(client_stream, client_addr, history, *kind, self.noinfo);
             if let Ok(new_token) = self.clients.insert(client) {
                 let client = &mut self.clients[new_token];
                 client.set_token(new_token);
