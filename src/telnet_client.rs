@@ -2,12 +2,14 @@ use std::net::{SocketAddr};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::{str};
 use mio::*;
 use mio::tcp::{TcpStream};
 use telnet::parser::{TelnetTokenizer, TelnetToken};
 use telnet::iac;
 use time;
+use byteorder::{BigEndian, ReadBytesExt};
 
 use history::HistoryType;
 use history::History;
@@ -17,12 +19,18 @@ use telnet_server::*;
 const LINESEP:char = '\n';
 const ECHO_DATA:u8 = 1;
 const SUPPRESS_GA:u8 = 3;
+const NAWS:u8 = 31;
 const IAC:u8 = 0xff;
 
 #[derive(PartialEq)]
 enum ClientState {
     Connected,
     HasSentMotd,
+}
+
+enum TelnetMode {
+    Text,
+    NAWS,
 }
 
 pub struct TelnetClient {
@@ -34,8 +42,10 @@ pub struct TelnetClient {
     state: ClientState,
     tokenizer: TelnetTokenizer,
     server_echo: bool,
+    pub window_size: (u16, u16),
     pub kind: BindKind,
     noinfo: bool,
+    telnetmode: TelnetMode,
 }
 
 impl TelnetClient {
@@ -51,8 +61,10 @@ impl TelnetClient {
             state: ClientState::Connected,
             tokenizer: TelnetTokenizer::new(),
             server_echo: true,
+            window_size: (0, 0),
             kind: kind,
             noinfo: noinfo,
+            telnetmode: TelnetMode::Text,
         }
     }
 
@@ -89,19 +101,40 @@ impl TelnetClient {
                             debug!("token text: {:?}", text);
                             // Every time we receive a token that begins with a CR we send
                             // a newline instead to the process since the process runs on Linux.
-                            if text[0] == '\r' as u8 {
-                                content.push(LINESEP);
-                            } else {
-                                match str::from_utf8(text) {
-                                    Err(why) => error!("Failed to parse {:?}: {}", text, why),
-                                    Ok(text) => {
-                                        content.push_str(text);
+                            match self.telnetmode {
+                                TelnetMode::NAWS => {
+                                    let mut rdr = Cursor::new(text);
+                                    let cols = rdr.read_u16::<BigEndian>().unwrap();
+                                    let rows = rdr.read_u16::<BigEndian>().unwrap();
+                                    self.window_size = (rows, cols);
+                                    println!("window size should be {} {}", rows, cols);
+                                },
+                                TelnetMode::Text => {
+                                    if text[0] == '\r' as u8 {
+                                        content.push(LINESEP);
+                                    } else {
+                                        match str::from_utf8(text) {
+                                            Err(why) => error!("Failed to parse {:?}: {}", text, why),
+                                            Ok(text) => {
+                                                content.push_str(text);
+                                            },
+                                        }
                                     }
                                 }
                             }
                         },
                         TelnetToken::Command(command) => {
-                            warn!("Unkown telnet Command {:?}", command);
+                            match command {
+                                iac::IAC::SE => {
+                                    match self.telnetmode {
+                                        TelnetMode::NAWS => {
+                                            self.telnetmode = TelnetMode::Text;
+                                        },
+                                        _ => (),
+                                    }
+                                },
+                                _ => warn!("Unkown telnet Command {:?}", command),
+                            }
                         },
                         TelnetToken::Negotiation{command, channel} => {
                             match (command, channel) {
@@ -112,6 +145,10 @@ impl TelnetClient {
                                     self.server_echo = false
                                 },
                                 (iac::IAC::DO, SUPPRESS_GA) | (iac::IAC::DONT, SUPPRESS_GA) => {},
+                                (iac::IAC::WILL, NAWS) => {},
+                                (iac::IAC::SB, NAWS) => {
+                                    self.telnetmode = TelnetMode::NAWS;
+                                },
                                 _ => warn!("Unknown negotiation command {:?} {}", command, channel),
                             }
                         }
@@ -135,6 +172,7 @@ impl TelnetClient {
         let _ = self.stream.write(b"\x1B[0m\r\n");
         let _ = self.stream.write(&[IAC, iac::IAC::WILL, ECHO_DATA]);
         let _ = self.stream.write(&[IAC, iac::IAC::WILL, SUPPRESS_GA]);
+        let _ = self.stream.write(&[IAC, iac::IAC::DO, NAWS]);
     }
 
     pub fn write(&mut self) {

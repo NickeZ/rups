@@ -11,6 +11,7 @@ extern crate fd;
 extern crate chan_signal;
 extern crate libc;
 extern crate termios;
+extern crate byteorder;
 
 mod history;
 mod telnet_server;
@@ -184,6 +185,7 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
 
                         // If something of value was recieved from the client,
                         // send that to the child process.
+                        {
                         let mut client = telnet_server.conn(token);
                         let mut interest = Ready::readable();
                         if let Some(command) = client.read() {
@@ -215,6 +217,9 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
                         // Register the client connection for more reading
                         poll.reregister(client.get_stream(), token, interest,
                                         PollOpt::edge() | PollOpt::oneshot()).unwrap();
+                        }
+                        let (rows, cols) = telnet_server.get_window_size();
+                        child.resize(rows, cols);
                     }
                 }
             }

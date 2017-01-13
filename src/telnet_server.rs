@@ -96,5 +96,20 @@ impl TelnetServer {
                             PollOpt::edge() | PollOpt::oneshot()).unwrap();
         }
     }
+
+    pub fn get_window_size(&self) -> (u16, u16) {
+        let mut rows = u16::max_value();
+        let mut cols = u16::max_value();
+        for client in self.clients.iter() {
+            let (r, c) = client.window_size;
+            if r < rows {
+                rows = r;
+            }
+            if c < cols {
+                cols = c;
+            }
+        }
+        (rows, cols)
+    }
 }
 

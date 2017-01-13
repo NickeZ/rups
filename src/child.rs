@@ -7,6 +7,7 @@ use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
 
 use tty::{TtyServer, FileDesc};
+use tty::ffi::{WinSize, set_winsize, get_winsize};
 use mio::deprecated::{PipeReader, PipeWriter};
 
 use history::{History, HistoryType};
@@ -124,6 +125,13 @@ impl Child {
             self.exit_status = Some(self.child.as_mut().unwrap().wait().expect("Failed to wait on child"));
         }
         self.exit_status.as_ref().unwrap()
+    }
+
+    pub fn resize(&self, rows: u16, cols: u16) {
+        let mut ws = get_winsize(&self.stdin).unwrap();
+        ws.ws_row = rows;
+        ws.ws_col = cols;
+        set_winsize(&self.stdin, &ws);
     }
 }
 
