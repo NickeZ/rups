@@ -20,19 +20,16 @@ mod options;
 
 use std::io::prelude::*;
 use std::os::unix::io::{FromRawFd};
-use std::net::{SocketAddr, IpAddr};
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::str::{FromStr};
 
-use clap::{Arg, App};
 use mio::*;
 use mio::timer::{Timer};
 use mio::deprecated::{PipeReader};
 use chan_signal::{Signal};
 use termios::*;
-use log::LogLevel;
+//use log::LogLevel;
 
 use history::*;
 use telnet_server::*;
@@ -68,7 +65,7 @@ fn main() {
 
     let(sdone, rdone) = chan::sync(0);
 
-    let mut options = Options::parse_args();
+    let options = Options::parse_args();
 
     ::std::thread::spawn(move || run(options, sdone));
 
