@@ -13,7 +13,6 @@ use history::{History, HistoryType};
 
 #[allow(dead_code)]
 pub struct Child {
-    executable: String,
     args: Vec<String>,
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
@@ -26,10 +25,10 @@ pub struct Child {
 }
 
 impl Child {
-    pub fn new(executable:String, args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, spawn:bool) -> Child {
-        let mut command = Command::new(&executable);
-        if args.len() > 0 {
-            command.args(&args);
+    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, spawn:bool) -> Child {
+        let mut command = Command::new(&args[0]);
+        if args.len() > 1 {
+            command.args(&args[1..]);
         }
         let mut ttyserver = match TtyServer::new(None as Option<&FileDesc>) {
             Err(why) => panic!("Error, could not open tty: {}", why),
@@ -41,12 +40,12 @@ impl Child {
         let mut child = None;
         if spawn {
             match ttyserver.spawn(command) {
-                Err(why) => panic!("Couldn't spawn {}: {}", executable, why.description()),
+                Err(why) => panic!("Couldn't spawn {}: {}", args[0], why.description()),
                 Ok(p) => {
                     child = Some(p);
                     history.borrow_mut().push(
                         HistoryType::Info,
-                        format!("Successfully launched {}!\r\n", executable));
+                        format!("Successfully launched {}!\r\n", args[0]));
                 }
             };
         };
@@ -56,7 +55,6 @@ impl Child {
         let stdin = unsafe { PipeWriter::from_raw_fd(fd.as_raw_fd())};
         let stdout = unsafe { PipeReader::from_raw_fd(fd2.as_raw_fd())};
         Child {
-            executable: executable,
             args: args,
             history: history,
             mailbox: Vec::new(),
@@ -70,7 +68,7 @@ impl Child {
     }
 
     pub fn new_from_child(other: Child) -> Child {
-        Child::new(other.executable, other.args, other.history, other.foreground, true)
+        Child::new(other.args, other.history, other.foreground, true)
     }
 
     pub fn read(&mut self) {

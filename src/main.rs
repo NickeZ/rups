@@ -16,6 +16,7 @@ mod history;
 mod telnet_server;
 mod telnet_client;
 mod child;
+mod options;
 
 use std::io::prelude::*;
 use std::os::unix::io::{FromRawFd};
@@ -36,6 +37,7 @@ use log::LogLevel;
 use history::*;
 use telnet_server::*;
 use child::Child;
+use options::Options;
 
 // Number of connections cannot go above 10 million.
 const TIMER: Token = Token(10_000_000);
@@ -43,24 +45,6 @@ const CHILD_STDOUT: Token = Token(10_000_001);
 const CHILD_STDIN: Token = Token(10_000_002);
 const PROMPT_INPUT: Token = Token(10_000_003);
 const SERVER_BIND_START: Token = Token(10_000_004);
-
-struct RupsApp {
-    noautorestart: bool,
-    holdoff: u64,
-    autostart: bool,
-    noinfo: bool,
-}
-
-impl RupsApp {
-    fn new(noautorestart: bool, holdoff: u64, autostart: bool, noinfo: bool) -> RupsApp {
-        RupsApp {
-            noautorestart: noautorestart,
-            holdoff: holdoff,
-            autostart: autostart,
-            noinfo: noinfo,
-        }
-    }
-}
 
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
     history.borrow_mut().push(HistoryType::Info, message);
@@ -84,7 +68,9 @@ fn main() {
 
     let(sdone, rdone) = chan::sync(0);
 
-    ::std::thread::spawn(move || run(sdone));
+    let mut options = Options::parse_args();
+
+    ::std::thread::spawn(move || run(options, sdone));
 
     chan_select! {
         signal.recv() -> signal => {
@@ -100,129 +86,42 @@ fn main() {
     }
 }
 
-fn run(_sdone: chan::Sender<()>) {
-    let matches = App::new("Rups")
-                          .version("0.1.0")
-                          .author("Niklas Claesson <nicke.claesson@gmail.com>")
-                          .about("Rust process server")
-                          .arg(Arg::with_name("wait")
-                               .long("wait")
-                               .short("w")
-                               .help("let user start process via telnet command"))
-                          .arg(Arg::with_name("noautorestart")
-                               .long("noautorestart")
-                               .help("do not restart the child process by default"))
-                          .arg(Arg::with_name("quiet")
-                               .short("q")
-                               .long("quiet")
-                               .help("suppress messages (server)"))
-                          .arg(Arg::with_name("noinfo")
-                               .short("n")
-                               .long("noinfo")
-                               .help("suppress messages (clients)"))
-                          .arg(Arg::with_name("foreground")
-                               .short("f")
-                               .long("foreground")
-                               .help("print process output to stdout (server)"))
-                          .arg(Arg::with_name("holdoff")
-                               .long("holdoff")
-                               .help("wait n seconds between process restart")
-                               .takes_value(true))
-                          .arg(Arg::with_name("interactive")
-                               .short("I")
-                               .long("interactive")
-                               .help("Connect stdin to process input (server)"))
-                          .arg(Arg::with_name("bind")
-                               .short("b")
-                               .long("bind")
-                               .multiple(true)
-                               .help("Bind to address (default is 127.0.0.1:3000")
-                               .takes_value(true))
-                          .arg(Arg::with_name("logbind")
-                               .short("l")
-                               .long("logbind")
-                               .multiple(true)
-                               .help("Bind to address for log output (ignore any received data)")
-                               .takes_value(true))
-                          .arg(Arg::with_name("logfile")
-                               .short("L")
-                               .long("logfile")
-                               .multiple(true)
-                               .help("Output to logfile")
-                               .takes_value(true))
-                          .arg(Arg::with_name("histsize")
-                               .long("histsize")
-                               .help("Set maximum telnet packets to remember")
-                               .takes_value(true))
-                          .arg(Arg::with_name("command")
-                               .required(true)
-                               .multiple(true))
-                          .get_matches();
 
-    let mut commands = values_t!(matches, "command", String).unwrap();
-    let foreground = matches.is_present("foreground");
+fn run(mut options: Options, _sdone: chan::Sender<()>) {
 
-    let mut app = RupsApp::new(matches.is_present("noautorestart"),
-                               value_t!(matches, "holdoff", u64).unwrap_or(0),
-                               !matches.is_present("wait"),
-                               matches.is_present("noinfo"));
+    let history = Rc::new(RefCell::new(History::new(options.history_size)));
 
-    let histsize = value_t!(matches, "histsize", usize).unwrap_or(20000);
-    let history = Rc::new(RefCell::new(History::new(histsize)));
+    let mut child = child::Child::new(
+        options.command.clone(),
+        history.clone(),
+        options.foreground,
+        options.autostart,
+    );
 
-    let mut child = child::Child::new(commands.remove(0), commands, history.clone(), foreground, app.autostart);
-
-    let mut logaddrs:Vec<SocketAddr> = Vec::new();
-    if let Ok(bindv) =  values_t!(matches, "logbind", String) {
-        for bind in &bindv {
-            if let Ok(addr) = bind.parse() {
-                logaddrs.push(addr);
-            } else {
-                if let Ok(port) = bind.parse() {
-                    logaddrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
-                } else {
-                    // TODO: Parse it as a unix socket instead..
-                }
-            }
-        }
-    }
-
-    let mut addrs:Vec<SocketAddr> = Vec::new();
-    if let Ok(bindv) =  values_t!(matches, "bind", String) {
-        for bind in &bindv {
-            if let Ok(addr) = bind.parse() {
-                addrs.push(addr);
-            } else {
-                if let Ok(port) = bind.parse() {
-                    addrs.push(SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), port))
-                } else {
-                    // TODO: Parse it as a unix socket instead..
-                }
-            }
-        }
-    }
-
-
-    let mut telnet_server = telnet_server::TelnetServer::new(app.noinfo);
+    let mut telnet_server = telnet_server::TelnetServer::new(options.noinfo);
 
     let poll = Poll::new().unwrap();
 
-    if app.autostart {
+    if options.autostart {
         child_select(&poll, &mut child);
     }
 
-    for addr in logaddrs {
-        telnet_server.add_bind(&poll, addr, BindKind::Log);
-        println!("Listening on Port {}", addr);
+    if let Some(ref binds) = options.logbinds {
+        for addr in binds {
+            telnet_server.add_bind(&poll, *addr, BindKind::Log);
+            println!("Listening on Port {}", addr);
+        }
     }
 
-    for addr in addrs {
-        telnet_server.add_bind(&poll, addr, BindKind::Control);
-        println!("Listening on Port {}", addr);
+    if let Some(ref binds) = options.binds {
+        for addr in binds {
+            telnet_server.add_bind(&poll, *addr, BindKind::Control);
+            println!("Listening on Port {}", addr);
+        }
     }
 
     let mut prompt_input:Option<PipeReader> = None;
-    if matches.is_present("interactive") {
+    if options.interactive {
         let old_termios = Termios::from_fd(libc::STDIN_FILENO).unwrap();
         let mut new_termios = old_termios;
         new_termios.c_lflag &= !(ICANON | ECHO);
@@ -301,7 +200,7 @@ fn run(_sdone: chan::Sender<()>) {
                                         child_select(&poll, &mut child);
                                     },
                                     "\x14" => { // Ctrl-T
-                                        app.noautorestart = ! app.noautorestart;
+                                        options.toggle_autorestart();
                                     },
                                     "\x18" => { // Ctrl-X
                                         child.kill();
@@ -360,10 +259,12 @@ fn run(_sdone: chan::Sender<()>) {
                         }
 
                         // Create a new process
-                        if ! app.noautorestart {
-                            if app.holdoff > 0 {
-                                timer.set_timeout(std::time::Duration::from_secs(app.holdoff), "execute").unwrap();
-                                push_info(&history, String::from(format!("Restarting in {} seconds\r\n", app.holdoff)));
+                        if options.autorestart {
+                            if options.holdoff > 0.0 {
+                                let seconds = options.holdoff as u64;
+                                let nanos = ((options.holdoff - seconds as f64) * 1e9 ) as u32;
+                                timer.set_timeout(std::time::Duration::new(seconds, nanos), "execute").unwrap();
+                                push_info(&history, String::from(format!("Restarting in {} seconds\n", options.holdoff)));
                                 telnet_server.poll_clients_write(&poll);
                             } else {
                                 child = Child::new_from_child(child);
