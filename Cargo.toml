@@ -23,6 +23,8 @@ fd = "0.2.2"
 termios = "0.2.2"
 byteorder = "1.0.0"
 tty = {path = "tty"}
+futures = "0.1.8"
+tokio-core = "0.1.3"
 
 #[dependencies.tty]
 #git = "https://github.com/NickeZ/tty-rs"

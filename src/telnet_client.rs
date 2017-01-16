@@ -6,21 +6,19 @@ use std::io::Cursor;
 use std::{str};
 use mio::*;
 use mio::tcp::{TcpStream};
-use telnet::parser::{TelnetTokenizer, TelnetToken};
-use telnet::iac;
+use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
+//use rust_telnet::iac;
 use time;
 use byteorder::{BigEndian, ReadBytesExt};
 
 use history::HistoryType;
 use history::History;
 
+use telnet::{IAC, OPTION};
+
 use telnet_server::*;
 
 const LINESEP:char = '\n';
-const ECHO_DATA:u8 = 1;
-const SUPPRESS_GA:u8 = 3;
-const NAWS:u8 = 31;
-const IAC:u8 = 0xff;
 
 #[derive(PartialEq)]
 enum ClientState {
@@ -95,7 +93,9 @@ impl TelnetClient {
                     // Return an empty string.
                     return Some(content)
                 }
+                println!("new packet");
                 for token in self.tokenizer.tokenize(&buffer[0..len]) {
+                    println!("{:?}", token);
                     match token {
                         TelnetToken::Text(text) => {
                             debug!("token text: {:?}", text);
@@ -125,7 +125,7 @@ impl TelnetClient {
                         },
                         TelnetToken::Command(command) => {
                             match command {
-                                iac::IAC::SE => {
+                                IAC::SE => {
                                     match self.telnetmode {
                                         TelnetMode::NAWS => {
                                             self.telnetmode = TelnetMode::Text;
@@ -138,15 +138,15 @@ impl TelnetClient {
                         },
                         TelnetToken::Negotiation{command, channel} => {
                             match (command, channel) {
-                                (iac::IAC::DO, ECHO_DATA) => {
+                                (IAC::DO, OPTION::ECHO) => {
                                     self.server_echo = true
                                 },
-                                (iac::IAC::DONT, ECHO_DATA) => {
+                                (IAC::DONT, OPTION::ECHO) => {
                                     self.server_echo = false
                                 },
-                                (iac::IAC::DO, SUPPRESS_GA) | (iac::IAC::DONT, SUPPRESS_GA) => {},
-                                (iac::IAC::WILL, NAWS) => {},
-                                (iac::IAC::SB, NAWS) => {
+                                (IAC::DO, OPTION::SUPPRESS_GO_AHEAD) | (IAC::DONT, OPTION::SUPPRESS_GO_AHEAD) => {},
+                                (IAC::WILL, OPTION::NAWS) => {},
+                                (IAC::SB, OPTION::NAWS) => {
                                     self.telnetmode = TelnetMode::NAWS;
                                 },
                                 _ => warn!("Unknown negotiation command {:?} {}", command, channel),
@@ -170,9 +170,9 @@ impl TelnetClient {
         let _ = self.stream.write(b"This server was started at: ");
         let _ = self.stream.write(now.unwrap().as_bytes());
         let _ = self.stream.write(b"\x1B[0m\r\n");
-        let _ = self.stream.write(&[IAC, iac::IAC::WILL, ECHO_DATA]);
-        let _ = self.stream.write(&[IAC, iac::IAC::WILL, SUPPRESS_GA]);
-        let _ = self.stream.write(&[IAC, iac::IAC::DO, NAWS]);
+        let _ = self.stream.write(&[IAC::IAC, IAC::WILL, OPTION::ECHO]);
+        let _ = self.stream.write(&[IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]);
+        let _ = self.stream.write(&[IAC::IAC, IAC::DO, OPTION::NAWS]);
     }
 
     pub fn write(&mut self) {

@@ -4,7 +4,7 @@ extern crate env_logger;
 extern crate mio;
 extern crate slab;
 extern crate time;
-extern crate rust_telnet as telnet;
+extern crate rust_telnet;
 extern crate tty;
 extern crate fd;
 #[macro_use] extern crate chan;
@@ -12,12 +12,15 @@ extern crate chan_signal;
 extern crate libc;
 extern crate termios;
 extern crate byteorder;
+extern crate futures;
+extern crate tokio_core;
 
 mod history;
 mod telnet_server;
 mod telnet_client;
 mod child;
 mod options;
+mod telnet;
 
 use std::io::prelude::*;
 use std::os::unix::io::{FromRawFd};
