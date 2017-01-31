@@ -1,0 +1,10 @@
+[package]
+name = "tty"
+version = "0.1.0"
+authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
+
+[dependencies]
+futures = "*"
+libc = "*"
+mio = "*"
+tokio-core = "*"
