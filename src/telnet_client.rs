@@ -32,7 +32,7 @@ enum TelnetMode {
 }
 
 pub struct TelnetClient {
-    token: Option<Token>,
+    //token: Option<Token>,
     addr: SocketAddr,
     stream: TcpStream,
     history: Rc<RefCell<History>>,
@@ -66,12 +66,12 @@ impl TelnetClient {
         }
     }
 
-    pub fn get_token(&self) -> Option<Token> {
-        self.token
-    }
-    pub fn set_token(&mut self, token:Token) {
-        self.token = Some(token);
-    }
+    //pub fn get_token(&self) -> Option<Token> {
+    //    self.token
+    //}
+    //pub fn set_token(&mut self, token:Token) {
+    //    self.token = Some(token);
+    //}
     pub fn get_stream(&self) -> &TcpStream {
         &self.stream
     }

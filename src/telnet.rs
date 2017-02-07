@@ -52,36 +52,39 @@ impl TelnetCodec {
     }
 }
 
-pub enum TelnetIn {
-    Text {text:str},
+pub enum TelnetIn<'a> {
+    Text {text:&'a str},
     Carriage,
     NAWS {rows:u16, cols:u16},
 }
-pub struct TelnetResponse;
+pub struct TelnetOut;
 
 impl Codec for TelnetCodec {
     type In = TelnetIn;
-    type Out = TelnetResponse;
+    type Out = TelnetOut;
 
     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
+        let res;
         for token in self.tokenizer.tokenize(buf.as_slice()) {
             match token {
                 TelnetToken::Text(bytes) => {
-                    println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
-                    Ok(Some(TelnetIn::Text{text: str::from_utf8(bytes).unwrap_or("")}))
+                    println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or("".to_string()));
+                    res = Ok(Some(TelnetIn::Text{text: str::from_utf8(bytes).unwrap_or("".to_string())}));
                 },
                 TelnetToken::Command(command) => {
                     println!("command {:?}", command);
+                    res = Ok(None);
                 },
                 TelnetToken::Negotiation{command, channel} => {
                     println!("negotiation {:?}", command);
+                    res = Ok(None);
                 },
             }
         }
-        Ok(None)
+        res
     }
 
-    fn encode(&mut self, msg: TelnetResponse, buf: &mut Vec<u8>) -> io::Result<()> {
+    fn encode(&mut self, msg: TelnetOut, buf: &mut Vec<u8>) -> io::Result<()> {
         Ok(())
     }
 }
