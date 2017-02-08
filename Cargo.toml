@@ -22,10 +22,11 @@ libc = "0.2"
 fd = "0.2.2"
 termios = "0.2.2"
 byteorder = "1.0.0"
+tty = {path = "tty"}
 
-[dependencies.tty]
-git = "https://github.com/NickeZ/tty-rs"
-rev = "e21a6923ba720ed111431dabbde20a6d1febc61f"
+#[dependencies.tty]
+#git = "https://github.com/NickeZ/tty-rs"
+#rev = "e21a6923ba720ed111431dabbde20a6d1febc61f"
 
 [dependencies.rust-telnet]
 git = "https://github.com/Nercury/rust-telnet.git"
