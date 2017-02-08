@@ -37,7 +37,7 @@ use termios::*;
 
 use history::*;
 use telnet_server::*;
-use child::Child;
+use child::Process;
 use options::Options;
 
 // Number of connections cannot go above 10 million.
@@ -92,12 +92,14 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
 
     let history = Rc::new(RefCell::new(History::new(options.history_size)));
 
-    let mut child = child::Child::new(
+    let mut child = child::Process::new(
         options.command.clone(),
         history.clone(),
         options.foreground,
-        options.autostart,
     );
+    if options.autostart {
+        child.spawn();
+    }
 
     let mut telnet_server = telnet_server::TelnetServer::new(options.noinfo);
 

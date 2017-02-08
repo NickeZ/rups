@@ -45,6 +45,9 @@ mod tests {
     }
 }
 
+pub type Rows = u16;
+pub type Columns = u16;
+
 pub struct Command {
     builder: process::Command,
     master: libc::c_int,
@@ -52,7 +55,6 @@ pub struct Command {
 }
 
 impl Command {
-
     pub fn new<S>(program: S) -> Command
         where S: AsRef<OsStr>
     {
@@ -107,6 +109,13 @@ impl Command {
             libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
         Ok(Child::new(child, self.master))
+    }
+
+    pub fn set_window_size(rows: Rows, columns: Columns) {
+        //let mut ws = get_winsize(stdin).unwrap()
+        //ws.ws_row = Rows;
+        //ws.ws_col = Columns;
+        //set_winsize(stdin, &ws);
     }
 }
 

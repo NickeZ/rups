@@ -1,5 +1,6 @@
 use std::{io, str};
 
+use tty;
 use tokio_core::io::{Io, Codec, Framed, EasyBuf};
 use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
 
@@ -52,10 +53,10 @@ impl TelnetCodec {
     }
 }
 
-pub enum TelnetIn<'a> {
-    Text {text:&'a str},
+pub enum TelnetIn {
+    Text {text:Vec<u8>},
     Carriage,
-    NAWS {rows:u16, cols:u16},
+    NAWS {rows:tty::Rows, columns:tty::Columns},
 }
 pub struct TelnetOut;
 
@@ -64,24 +65,27 @@ impl Codec for TelnetCodec {
     type Out = TelnetOut;
 
     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
-        let res;
         for token in self.tokenizer.tokenize(buf.as_slice()) {
             match token {
                 TelnetToken::Text(bytes) => {
-                    println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or("".to_string()));
-                    res = Ok(Some(TelnetIn::Text{text: str::from_utf8(bytes).unwrap_or("".to_string())}));
+                    println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
+                    //let vec = Vec::new();
+                    //for byte in bytes.iter() {
+                    //    vec.push(byte);
+                    //}
+                    return Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
                 },
                 TelnetToken::Command(command) => {
                     println!("command {:?}", command);
-                    res = Ok(None);
+                    return Ok(None);
                 },
                 TelnetToken::Negotiation{command, channel} => {
                     println!("negotiation {:?}", command);
-                    res = Ok(None);
+                    return Ok(None);
                 },
             }
         }
-        res
+        Ok(None)
     }
 
     fn encode(&mut self, msg: TelnetOut, buf: &mut Vec<u8>) -> io::Result<()> {
