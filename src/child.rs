@@ -6,9 +6,9 @@ use std::io::{self};
 use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
 
-use tty::{TtyServer, FileDesc};
-use tty::ffi::{WinSize, set_winsize, get_winsize};
-use mio::deprecated::{PipeReader, PipeWriter};
+//use tty::{TtyServer, FileDesc};
+//use tty::ffi::{WinSize, set_winsize, get_winsize};
+//use mio::deprecated::{PipeReader, PipeWriter};
 
 use history::{History, HistoryType};
 
@@ -18,11 +18,11 @@ pub struct Child {
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
     foreground: bool,
-    ttyserver: TtyServer,
-    child: Option<process::Child>,
+    //ttyserver: TtyServer,
+    //child: Option<tty::Child>,
     exit_status: Option<process::ExitStatus>,
-    stdin: PipeWriter,
-    stdout: PipeReader,
+    //stdin: PipeWriter,
+    //stdout: PipeReader,
 }
 
 impl Child {

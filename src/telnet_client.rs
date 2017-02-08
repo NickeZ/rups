@@ -4,8 +4,9 @@ use std::rc::Rc;
 use std::io::prelude::*;
 use std::io::Cursor;
 use std::{str};
-use mio::*;
-use mio::tcp::{TcpStream};
+//use mio::*;
+//use mio::tcp::{TcpStream};
+//use tokio_core::net::Tcp
 use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
 //use rust_telnet::iac;
 use time;
@@ -34,7 +35,7 @@ enum TelnetMode {
 pub struct TelnetClient {
     //token: Option<Token>,
     addr: SocketAddr,
-    stream: TcpStream,
+    //stream: TcpStream,
     history: Rc<RefCell<History>>,
     cursor: usize,
     state: ClientState,
@@ -51,8 +52,8 @@ impl TelnetClient {
                history:Rc<RefCell<History>>, kind:BindKind, noinfo:bool) -> TelnetClient {
         let cursor = history.borrow_mut().get_offset();
         TelnetClient {
-            token: None,
-            stream: stream,
+            //token: None,
+            //stream: stream,
             addr: addr,
             history: history,
             cursor:cursor,

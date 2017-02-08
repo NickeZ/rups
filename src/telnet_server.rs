@@ -4,7 +4,7 @@ use std::rc::{Rc};
 use std::net::{SocketAddr};
 use std::error::{Error};
 //use mio::*;
-use mio::tcp::{TcpListener};
+//use mio::tcp::{TcpListener};
 
 use telnet_client::TelnetClient;
 use history::History;
@@ -47,7 +47,7 @@ impl TelnetServer {
 //        }
 //    }
 
-    /// Try to accept a connection, will return false if token is not a bind socket.
+    // Try to accept a connection, will return false if token is not a bind socket.
     //pub fn try_accept(&mut self, poll:&Poll, token:Token, history:Rc<RefCell<History>>) -> bool{
     //    if self.sockets.contains_key(&token) {
     //        let (ref socket, ref kind) = self.sockets[&token];
