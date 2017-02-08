@@ -28,6 +28,8 @@ use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 
+use futures::Stream;
+
 //use mio::*;
 //use mio::timer::{Timer};
 //use mio::deprecated::{PipeReader};
@@ -40,23 +42,9 @@ use telnet_server::*;
 use child::Process;
 use options::Options;
 
-// Number of connections cannot go above 10 million.
-//const TIMER: Token = Token(10_000_000);
-//const CHILD_STDOUT: Token = Token(10_000_001);
-//const CHILD_STDIN: Token = Token(10_000_002);
-//const PROMPT_INPUT: Token = Token(10_000_003);
-//const SERVER_BIND_START: Token = Token(10_000_004);
-
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
     history.borrow_mut().push(HistoryType::Info, message);
 }
-
-//fn child_select(poll:&Poll, child:&mut Child) {
-//    poll.register(child.stdin(), CHILD_STDIN, Ready::writable(),
-//                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
-//    poll.register(child.stdout(), CHILD_STDOUT, Ready::readable(),
-//                  PollOpt::edge() | PollOpt::oneshot()).unwrap();
-//}
 
 fn main() {
     env_logger::init().unwrap();
@@ -89,6 +77,8 @@ fn main() {
 
 
 fn run(mut options: Options, _sdone: chan::Sender<()>) {
+    let mut core = tokio_core::reactor::Core::new().unwrap();
+    let handle = core.handle();
 
     let history = Rc::new(RefCell::new(History::new(options.history_size)));
 
@@ -102,6 +92,22 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
     }
 
     let mut telnet_server = telnet_server::TelnetServer::new(options.noinfo);
+    if let Some(binds) = options.binds {
+        for bind in binds {
+            telnet_server.bind(&bind, &handle);
+        }
+    } else {
+        panic!("No binds!");
+    }
+
+    let welcomes = telnet_server.incoming().and_then(|(socket, _peer_addr)| {
+        tokio_core::io::write_all(socket, b"hej!\r\n")
+    });
+    let server = welcomes.for_each(|(_socket, _peer_addr)| {
+        Ok(())
+    });
+
+    core.run(server).unwrap()
 
 //    let poll = Poll::new().unwrap();
 //

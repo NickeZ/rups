@@ -5,6 +5,10 @@ use std::net::{SocketAddr};
 use std::error::{Error};
 //use mio::*;
 //use mio::tcp::{TcpListener};
+use tokio_core;
+use tokio_core::net::{TcpListener, TcpStream};
+use futures::{self, Stream, Poll, Async};
+use std::io;
 
 use telnet_client::TelnetClient;
 use history::History;
@@ -22,6 +26,7 @@ pub struct TelnetServer {
 //    clients: Slab<TelnetClient>,
 //    token_counter: usize,
     noinfo: bool,
+    listeners: Vec<TcpListener>,
 }
 
 impl TelnetServer {
@@ -31,7 +36,17 @@ impl TelnetServer {
 //            clients: Slab::with_capacity(1024),
 //            token_counter: ::SERVER_BIND_START.0,
             noinfo: noinfo,
+            listeners: Vec::new(),
         }
+    }
+
+    pub fn bind(&mut self, addr: &SocketAddr, handle: &tokio_core::reactor::Handle) {
+        let listener = TcpListener::bind(addr, handle).unwrap();
+        self.listeners.push(listener);
+    }
+
+    pub fn incoming(self) -> Incoming {
+        Incoming::new(self.listeners)
     }
 
 //    pub fn add_bind(&mut self, poll: &Poll, addr:SocketAddr, kind:BindKind) {
@@ -111,5 +126,56 @@ impl TelnetServer {
 //        }
 //        (rows, cols)
 //    }
+}
+
+struct Incoming {
+    inner: Box<futures::Stream<Item=(TcpStream, SocketAddr), Error=io::Error>>,
+}
+
+impl Incoming {
+    pub fn new(mut listeners: Vec<TcpListener>) -> Incoming {
+        if listeners.len() == 0 {
+            panic!("No binds");
+        }
+        let incoming = listeners.remove(0).incoming();
+        let mut select;
+        //let mut tmp;
+        let mut index = 0;
+        if listeners.len() > 0 {
+            for l in listeners.drain(0..) {
+                if(index == 0) {
+                    select = incoming.select(l.incoming());
+                } else {
+                    select = select.select(l.incoming());
+                }
+                //tmp = &select;
+                index = index + 1;
+            }
+            //let incoming_merge = incoming.merge(listeners.remove(0).incoming());
+            //loop {
+            //    if listeners.len() == 0 {
+            //        break;
+            //    }
+            //    incoming_merge = incoming_merge.merge(listeners.remove(0).incoming());
+            //}
+            //return Incoming {
+            //    inner: Box::new(incoming),
+            //}
+        }
+        Incoming {
+            inner: Box::new(incoming),
+        }
+    }
+}
+
+impl Stream for Incoming {
+    type Item = (TcpStream, SocketAddr);
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        //futures::task::park().unpark();
+        self.inner.poll()
+        //Ok(Async::NotReady)
+    }
 }
 
