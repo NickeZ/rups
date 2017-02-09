@@ -45,8 +45,8 @@ mod tests {
     }
 }
 
-pub type Rows = u16;
-pub type Columns = u16;
+pub struct Rows(u16);
+pub struct Columns(u16);
 
 pub struct Command {
     builder: process::Command,
