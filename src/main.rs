@@ -100,14 +100,7 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         panic!("No binds!");
     }
 
-    //let welcomes = telnet_server.incoming();
-    //let server = welcomes.for_each(|(_socket, _peer_addr)| {
-    //    Ok(())
-    //});
-    let handle2 = core.handle();
-    let handle3 = core.handle();
-
-    core.run(telnet_server.server(&handle2, &handle3)).unwrap()
+    core.run(telnet_server.server(&handle)).unwrap()
 
 //    let poll = Poll::new().unwrap();
 //
