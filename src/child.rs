@@ -69,6 +69,14 @@ impl Process {
         Ok(())
     }
 
+    pub fn output(&mut self) -> tty::PipeReader {
+        self.child.unwrap().output()
+    }
+
+    pub fn input(&mut self) -> tty::PipeWriter {
+        self.child.unwrap().input()
+    }
+
     //pub fn read(&mut self) {
     //    let mut buffer = [0;2048];
     //    let len = self.stdout.read(&mut buffer).unwrap();

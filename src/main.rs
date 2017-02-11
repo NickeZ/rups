@@ -91,16 +91,16 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         child.spawn();
     }
 
-    let mut telnet_server = telnet_server::TelnetServer::new(options.noinfo);
+    let mut telnet_server = telnet_server::TelnetServer::new(child, options.noinfo);
     if let Some(binds) = options.binds {
         for bind in binds {
-            telnet_server.bind(&bind, &handle);
+            telnet_server.bind(&bind, core.handle());
         }
     } else {
         panic!("No binds!");
     }
 
-    core.run(telnet_server.server(&handle)).unwrap()
+    core.run(telnet_server.server()).unwrap()
 
 //    let poll = Poll::new().unwrap();
 //

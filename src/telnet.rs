@@ -45,7 +45,7 @@ pub struct TelnetCodec {
 }
 
 impl TelnetCodec {
-    fn new() -> TelnetCodec {
+    pub fn new() -> TelnetCodec {
         TelnetCodec {
             tokenizer: TelnetTokenizer::new(),
             mode: TelnetCodecMode::Text,
@@ -58,11 +58,11 @@ pub enum TelnetIn {
     Carriage,
     NAWS {rows:tty::Rows, columns:tty::Columns},
 }
-pub struct TelnetOut;
+//pub struct TelnetOut;
 
 impl Codec for TelnetCodec {
     type In = TelnetIn;
-    type Out = TelnetOut;
+    type Out = Vec<u8>;
 
     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
         for token in self.tokenizer.tokenize(buf.as_slice()) {
@@ -88,7 +88,10 @@ impl Codec for TelnetCodec {
         Ok(None)
     }
 
-    fn encode(&mut self, msg: TelnetOut, buf: &mut Vec<u8>) -> io::Result<()> {
+    fn encode(&mut self, msg: Vec<u8>, buf: &mut Vec<u8>) -> io::Result<()> {
+        for c in msg {
+            buf.push(c);
+        }
         Ok(())
     }
 }

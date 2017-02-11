@@ -7,12 +7,17 @@ use std::error::{Error};
 //use mio::tcp::{TcpListener};
 use tokio_core;
 use tokio_core::net::{TcpListener, TcpStream};
-use futures::{self, Stream, Poll, Async, Future};
+use tokio_core::io::Io;
+use futures::{self, Stream, Sink, Poll, Async, Future};
 use std::io;
 use std;
 
 use telnet_client::TelnetClient;
 use history::History;
+
+use telnet::TelnetCodec;
+
+use child;
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum BindKind {
@@ -22,40 +27,60 @@ pub enum BindKind {
 
 pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
     let fut = tokio_core::io::write_all(socket, b"hej!\r\n")
-        .map(|(a, buf)| {()})
-        .map_err(|e| {()});
+        .map(|x| ())
+        .map_err(|e| ());
     Box::new(fut)
 }
 
 pub struct TelnetServer {
+    child: child::Process,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
 }
 
 impl TelnetServer {
-    pub fn new(noinfo: bool) -> TelnetServer {
+    pub fn new(child: child::Process, noinfo: bool) -> TelnetServer {
         TelnetServer {
+            child: child,
             noinfo: noinfo,
             listeners: Vec::new(),
         }
     }
 
-    pub fn bind(&mut self, addr: &SocketAddr, handle: &tokio_core::reactor::Handle) {
-        let listener = TcpListener::bind(addr, handle).unwrap();
-        let server = listener.incoming().and_then(|(socket, peer_addr)| {
-            println!("connection {:?}", peer_addr);
-            tokio_core::io::write_all(socket, b"hej!\r\n")
-        }).for_each(|(_socket, _peer_addr)| {
+    pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
+        let listener = TcpListener::bind(addr, &handle).unwrap();
+        let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
+            let (writer, reader) = socket.framed(TelnetCodec::new()).split();
+            //let mut service = ProcessService::new_service()?;
+
+            let responses = reader.for_each(move |msg| {
+                //self.send_process(msg)
+                Ok(())
+            }).map_err(|_| ());
+
+            let messages = self.recv_process();
+            let server = writer.send_all(messages)
+                .then(|_| Ok(()));
+
+            let join = server.join(responses);
+            handle.spawn(join.map(|_| ()));
             Ok(())
         });
-        self.listeners.push(Box::new(server))
+        self.listeners.push(Box::new(sserver))
     }
 
-    pub fn server(mut self, handle: &tokio_core::reactor::Handle) -> Box<Future<Item=(), Error=io::Error>>{
+    pub fn server(mut self) -> Box<Future<Item=(), Error=io::Error>>{
         let server = futures::future::join_all(self.listeners).map(|x|());
         return Box::new(server);
     }
 
+    pub fn recv_process(&self) -> Box<Stream<Item=Vec<u8>, Error=io::Error>> {
+        Box::new(self.child.output())
+    }
+
+    //pub fn send_process(&self, msg) -> Box<Sink<SinkItem=Vec<u8>, SinkError=io::Error>> {
+    //    Box::new(self.child.input())
+    //}
 
     // Try to accept a connection, will return false if token is not a bind socket.
     //pub fn try_accept(&mut self, poll:&Poll, token:Token, history:Rc<RefCell<History>>) -> bool{
