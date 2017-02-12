@@ -1,3 +1,6 @@
+use std::io;
+use futures::{Stream, Sink, Poll, StartSend};
+
 #[derive(Debug, PartialEq)]
 pub enum HistoryType {
     Child,
@@ -41,4 +44,60 @@ impl History {
     pub fn get_offset(&self) -> usize {
         self.offset
     }
+
+    pub fn writer(&self) -> HistoryWriter {
+        HistoryWriter::new(self)
+    }
+
+    pub fn reader(&self) -> HistoryReader {
+        HistoryReader::new(self)
+    }
+}
+
+struct HistoryWriter<'a> {
+    history: &'a History,
+}
+
+impl<'a> HistoryWriter<'a> {
+    pub fn new(history: &'a History) -> HistoryWriter {
+        HistoryWriter {
+            history: history,
+        }
+    }
+}
+
+impl<'a> Sink for HistoryWriter<'a> {
+    type SinkItem = Vec<u8>;
+    type SinkError = io::Error;
+
+    fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        unimplemented!()
+    }
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        unimplemented!()
+    }
+}
+
+struct HistoryReader<'a> {
+    history: &'a History,
+    index: u64,
+}
+
+impl<'a> HistoryReader<'a> {
+    pub fn new(history: &'a History) -> HistoryReader {
+        HistoryReader {
+            history: history,
+            index: 0,
+        }
+    }
+}
+
+impl<'a> Stream for HistoryReader<'a> {
+    type Item = Vec<u8>;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        unimplemented!()
+    }
+
 }

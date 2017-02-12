@@ -28,7 +28,7 @@ use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 
-use futures::Stream;
+use futures::{Future, Stream, Sink};
 
 //use mio::*;
 //use mio::timer::{Timer};
@@ -91,7 +91,16 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         child.spawn();
     }
 
-    let mut telnet_server = telnet_server::TelnetServer::new(child, options.noinfo);
+    let hw = history.borrow();
+    let hw = hw.writer();
+    let proc_output = hw.send_all(child.pty.output())
+        .then(|_| Ok(()));
+    //child.pty.output().for_each(move |x| {
+    //    hw.write(x);
+    //    Ok(())
+    //});
+
+    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), &child, options.noinfo);
     if let Some(binds) = options.binds {
         for bind in binds {
             telnet_server.bind(&bind, core.handle());
@@ -100,7 +109,9 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         panic!("No binds!");
     }
 
-    core.run(telnet_server.server()).unwrap()
+    let join = telnet_server.server().join(proc_output).map(|_| ());
+
+    core.run(join).unwrap()
 
 //    let poll = Poll::new().unwrap();
 //

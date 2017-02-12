@@ -33,16 +33,18 @@ pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
     Box::new(fut)
 }
 
-pub struct TelnetServer {
-    child: child::Process,
+pub struct TelnetServer<'a> {
+    process: &'a child::Process,
+    history: Rc<RefCell<History>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
 }
 
-impl TelnetServer {
-    pub fn new(child: child::Process, noinfo: bool) -> TelnetServer {
+impl<'a> TelnetServer<'a> {
+    pub fn new(history: Rc<RefCell<History>>, process: &'a child::Process, noinfo: bool) -> TelnetServer {
         TelnetServer {
-            child: child,
+            process: process,
+            history: history,
             noinfo: noinfo,
             listeners: Vec::new(),
         }
@@ -50,20 +52,20 @@ impl TelnetServer {
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
-        let process_writer = self.child.pty.input();
-        let process_reader = self.child.pty.output();
+        let process_writer = Rc::new(RefCell::new(self.process.pty.input()));
+        let history = self.history.clone();
+        //let history_reader = Rc::new(RefCell::new(self.history.borrow().reader()));
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
-            //let mut service = ProcessService::new_service()?;
-            let pw = process_writer.clone();
-            let pr = process_reader.clone();
+
+            let process_writer = process_writer.clone();
 
             let responses = reader.for_each(move |msg| {
-                let mut pw_clone = pw.clone();
+                let mut pw_clone = process_writer.clone();
                 //self.send_process(msg)
                 match msg {
                     TelnetIn::Text {text} => {
-                        pw_clone.write(text.as_slice());
+                        pw_clone.borrow_mut().write(text.as_slice());
                         println!("TEXT: {:?}", text);
                     },
                     _=>(),
@@ -71,9 +73,10 @@ impl TelnetServer {
                 Ok(())
             }).map_err(|_| ());
 
-            //let messages = self.recv_process();
-            //let messages = self.child.output();
-            let messages = pr.clone();
+            let history = history.clone();
+            let history = history.borrow();
+            let messages = history.reader();
+            //let messages = messages.borrow_mut();
             let server = writer.send_all(messages)
                 .then(|_| Ok(()));
             //let server = writer.send("hej\r\n".as_bytes().to_vec()).then(|_| Ok(()));
