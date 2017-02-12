@@ -25,7 +25,8 @@ pub struct Process {
     mailbox: Vec<String>,
     foreground: bool,
     //ttyserver: TtyServer,
-    child: Option<tty::Child>,
+    pub pty: tty::Pty,
+    cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
     //stdin: PipeWriter,
     //stdout: PipeReader,
@@ -33,13 +34,20 @@ pub struct Process {
 
 impl Process {
     pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool) -> Process {
+        let mut pty = tty::Pty::new(&args[0]);
+        if args.len() > 1 {
+            for arg in args[1..].iter() {
+                pty.arg(arg);
+            }
+        }
         Process {
             args: args,
             history: history,
             mailbox: Vec::new(),
             foreground: foreground,
             //ttyserver: ttyserver,
-            child: None,
+            pty: pty,
+            cid: None,
             exit_status: None,
             //stdin: stdin,
             //stdout: stdout,
@@ -47,35 +55,46 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
-        if self.child.is_some() {
-            return Err(ProcessError::ProcessAlreadySpawned);
-        }
-        let mut command = tty::Command::new(&self.args[0]);
-        if self.args.len() > 1 {
-            for arg in self.args[1..].iter() {
-                command.arg(arg);
-            }
-        }
+        //if self.child.is_some() {
+        //    return Err(ProcessError::ProcessAlreadySpawned);
+        //}
+        //let mut command = tty::Command::new(&self.args[0]);
+        //if self.args.len() > 1 {
+        //    for arg in self.args[1..].iter() {
+        //        command.arg(arg);
+        //    }
+        //}
 
-        match command.spawn() {
+        match self.pty.spawn() {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(p) => {
-                self.child = Some(p);
+                self.cid = Some(p.id());
                 self.history.borrow_mut().push(
                     HistoryType::Info,
                     format!("Successfully spawned {}!\r\n", self.args[0]));
+                println!("Launched {}", self.args[0]);
             }
         };
         Ok(())
     }
 
-    pub fn output(&mut self) -> tty::PipeReader {
-        self.child.unwrap().output()
-    }
+    //pub fn split(self) -> Result<(tty::PipeWriter, tty::PipeReader), ()> {
+    //    match self.child {
+    //        Some(child) => Ok((child.input(), child.output())),
+    //        None => {
+    //            println!("No child...");
+    //            Err(())
+    //        },
+    //    }
+    //}
 
-    pub fn input(&mut self) -> tty::PipeWriter {
-        self.child.unwrap().input()
-    }
+    //pub fn output(&mut self) -> tty::PipeReader {
+    //    self.child.unwrap().output()
+    //}
+
+    //pub fn input(&mut self) -> tty::PipeWriter {
+    //    self.child.unwrap().input()
+    //}
 
     //pub fn read(&mut self) {
     //    let mut buffer = [0;2048];
@@ -104,15 +123,15 @@ impl Process {
     //}
 
     pub fn kill(&mut self) {
-        if self.is_alive() {
-            //self.child.as_mut().unwrap().kill().expect("Failed to kill process");
-            println!("TODO kill process..");
-        }
+        //if self.is_alive() {
+        //    //self.child.as_mut().unwrap().kill().expect("Failed to kill process");
+        //    println!("TODO kill process..");
+        //}
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.child.is_some() && self.exit_status.is_none()
-    }
+    //pub fn is_alive(&self) -> bool {
+    //    self.child.is_some() && self.exit_status.is_none()
+    //}
 
     pub fn send(&mut self, msg:String) {
         self.mailbox.push(msg);

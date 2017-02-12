@@ -48,17 +48,17 @@ mod tests {
 pub struct Rows(u16);
 pub struct Columns(u16);
 
-pub struct Command {
+pub struct Pty {
     builder: process::Command,
     master: libc::c_int,
-    slave: libc::c_int,
 }
 
-impl Command {
-    pub fn new<S>(program: S) -> Command
+impl Pty {
+    pub fn new<S>(program: S) -> Pty
         where S: AsRef<OsStr>
     {
         let (master, slave) = openpty(24 as u8, 80 as u8);
+        set_nonblock(master).unwrap();
 
         let mut builder = process::Command::new(program);
         builder.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
@@ -85,30 +85,25 @@ impl Command {
                    }
                    Ok(())
                });
-        Command {
+        unsafe {
+            // If child dies, reap it
+            libc::signal(libc::SIGCHLD, libc::SIG_IGN);
+        }
+        Pty {
             builder: builder,
             master: master,
-            slave: slave,
         }
     }
 
-    pub fn arg<S>(&mut self, arg: S) -> &mut Command
+    pub fn arg<S>(&mut self, arg: S) -> &mut Pty
         where S: AsRef<OsStr>
     {
         self.builder.arg(arg);
         self
     }
 
-    pub fn spawn(&mut self) -> io::Result<Child> {
-        set_nonblock(self.master)?;
-        let child = self.builder.spawn()?;
-        unsafe {
-            // Slave side of pty is not needed anymore
-            libc::close(self.slave);
-            // If child dies, reap it
-            libc::signal(libc::SIGCHLD, libc::SIG_IGN);
-        }
-        Ok(Child::new(child, self.master))
+    pub fn spawn(&mut self) -> io::Result<process::Child> {
+        self.builder.spawn()
     }
 
     pub fn set_window_size(rows: Rows, columns: Columns) {
@@ -116,20 +111,6 @@ impl Command {
         //ws.ws_row = Rows;
         //ws.ws_col = Columns;
         //set_winsize(stdin, &ws);
-    }
-}
-
-pub struct Child {
-    child: process::Child,
-    master: libc::c_int,
-}
-
-impl Child {
-    pub fn new(child: process::Child, master: libc::c_int) -> Child {
-        Child {
-            child: child,
-            master: master,
-        }
     }
 
     pub fn output(&self) -> PipeReader {
@@ -139,11 +120,25 @@ impl Child {
     pub fn input(&self) -> PipeWriter {
         unsafe {PipeWriter::from_raw_fd(self.master) }
     }
-
-    pub fn input_close(&self) {
-        unsafe {libc::close(self.master) };
-    }
 }
+
+//pub struct Child {
+//    child: process::Child,
+//    master: libc::c_int,
+//}
+//
+//impl Child {
+//    pub fn new(child: process::Child, master: libc::c_int) -> Child {
+//        Child {
+//            child: child,
+//            master: master,
+//        }
+//    }
+//
+//    pub fn input_close(&self) {
+//        unsafe {libc::close(self.master) };
+//    }
+//}
 
 /// Get raw fds for master/slave ends of a new pty
 #[cfg(target_os = "linux")]
@@ -195,6 +190,12 @@ impl PipeReader {
             _ => {},
         }
         return Ok(PipeReader::from(unsafe { Io::from_raw_fd(stderr.into_raw_fd()) }));
+    }
+}
+
+impl Clone for PipeReader {
+    fn clone(&self) -> PipeReader {
+        PipeReader { io: unsafe {FromRawFd::from_raw_fd(self.as_raw_fd())} }
     }
 }
 
@@ -259,6 +260,12 @@ impl PipeWriter {
             _ => {},
         }
         return Ok(PipeWriter::from(unsafe { Io::from_raw_fd(stdin.into_raw_fd()) }));
+    }
+}
+
+impl Clone for PipeWriter {
+    fn clone(&self) -> PipeWriter {
+        PipeWriter { io: unsafe {FromRawFd::from_raw_fd(self.as_raw_fd())}, buf: Vec::new() }
     }
 }
 

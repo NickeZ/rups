@@ -10,12 +10,13 @@ use tokio_core::net::{TcpListener, TcpStream};
 use tokio_core::io::Io;
 use futures::{self, Stream, Sink, Poll, Async, Future};
 use std::io;
+use std::io::Write;
 use std;
 
 use telnet_client::TelnetClient;
 use history::History;
 
-use telnet::TelnetCodec;
+use telnet::{TelnetCodec, TelnetIn};
 
 use child;
 
@@ -49,18 +50,33 @@ impl TelnetServer {
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
+        let process_writer = self.child.pty.input();
+        let process_reader = self.child.pty.output();
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
             //let mut service = ProcessService::new_service()?;
+            let pw = process_writer.clone();
+            let pr = process_reader.clone();
 
             let responses = reader.for_each(move |msg| {
+                let mut pw_clone = pw.clone();
                 //self.send_process(msg)
+                match msg {
+                    TelnetIn::Text {text} => {
+                        pw_clone.write(text.as_slice());
+                        println!("TEXT: {:?}", text);
+                    },
+                    _=>(),
+                }
                 Ok(())
             }).map_err(|_| ());
 
-            let messages = self.recv_process();
+            //let messages = self.recv_process();
+            //let messages = self.child.output();
+            let messages = pr.clone();
             let server = writer.send_all(messages)
                 .then(|_| Ok(()));
+            //let server = writer.send("hej\r\n".as_bytes().to_vec()).then(|_| Ok(()));
 
             let join = server.join(responses);
             handle.spawn(join.map(|_| ()));
@@ -74,9 +90,9 @@ impl TelnetServer {
         return Box::new(server);
     }
 
-    pub fn recv_process(&self) -> Box<Stream<Item=Vec<u8>, Error=io::Error>> {
-        Box::new(self.child.output())
-    }
+    //pub fn recv_process(&self) -> Box<Stream<Item=Vec<u8>, Error=io::Error>> {
+    //    Box::new(self.child.output())
+    //}
 
     //pub fn send_process(&self, msg) -> Box<Sink<SinkItem=Vec<u8>, SinkError=io::Error>> {
     //    Box::new(self.child.input())
