@@ -12,7 +12,7 @@ dependencies = [
  "libc 0.2.20 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "mio 0.6.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "rust-telnet 0.0.1 (git+https://github.com/Nercury/rust-telnet.git?rev=a1b5c532cad01c26458d99667eda9429ae188e56)",
+ "rust-telnet 0.0.1",
  "slab 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "termios 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.36 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -228,7 +228,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "rust-telnet"
 version = "0.0.1"
-source = "git+https://github.com/Nercury/rust-telnet.git?rev=a1b5c532cad01c26458d99667eda9429ae188e56#a1b5c532cad01c26458d99667eda9429ae188e56"
 
 [[package]]
 name = "scoped-tls"
@@ -379,7 +378,6 @@ dependencies = [
 "checksum redox_syscall 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)" = "8dd35cc9a8bdec562c757e3d43c1526b5c6d2653e23e2315065bc25556550753"
 "checksum regex 0.1.80 (registry+https://github.com/rust-lang/crates.io-index)" = "4fd4ace6a8cf7860714a2c2280d6c1f7e6a413486c13298bbc86fd3da019402f"
 "checksum regex-syntax 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)" = "f9ec002c35e86791825ed294b50008eea9ddfc8def4420124fbc6b08db834957"
-"checksum rust-telnet 0.0.1 (git+https://github.com/Nercury/rust-telnet.git?rev=a1b5c532cad01c26458d99667eda9429ae188e56)" = "<none>"
 "checksum scoped-tls 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f417c22df063e9450888a7561788e9bd46d3bb3c1466435b4eccb903807f147d"
 "checksum slab 0.3.0 (registry+https://github.com/rust-lang/crates.io-index)" = "17b4fcaed89ab08ef143da37bc52adbcc04d4a69014f4c1208d6b51f0c47bc23"
 "checksum strsim 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b4d15c810519a91cf877e7e36e63fe068815c678181439f2f29e2562147c3694"

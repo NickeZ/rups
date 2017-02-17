@@ -25,11 +25,12 @@ byteorder = "1.0.0"
 tty = {path = "tty"}
 futures = "0.1.8"
 tokio-core = "0.1.3"
+rust-telnet = {path = "rust-telnet"}
 
 #[dependencies.tty]
 #git = "https://github.com/NickeZ/tty-rs"
 #rev = "e21a6923ba720ed111431dabbde20a6d1febc61f"
 
-[dependencies.rust-telnet]
-git = "https://github.com/Nercury/rust-telnet.git"
-rev = "a1b5c532cad01c26458d99667eda9429ae188e56"
+#[dependencies.rust-telnet]
+#git = "https://github.com/Nercury/rust-telnet.git"
+#rev = "a1b5c532cad01c26458d99667eda9429ae188e56"
