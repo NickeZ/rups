@@ -43,7 +43,7 @@ use child::Process;
 use options::Options;
 
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
-    history.borrow_mut().push(HistoryType::Info, message);
+    history.borrow_mut().push(HistoryLine::Info{message: message});
 }
 
 fn main() {
@@ -91,8 +91,7 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         child.spawn();
     }
 
-    let hw = history.borrow();
-    let hw = hw.writer();
+    let hw = HistoryWriter::new(history.clone());
     let proc_output = hw.send_all(child.pty.output())
         .then(|_| Ok(()));
     //child.pty.output().for_each(move |x| {

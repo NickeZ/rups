@@ -45,7 +45,9 @@ mod tests {
     }
 }
 
+#[derive(Debug)]
 pub struct Rows(u16);
+#[derive(Debug)]
 pub struct Columns(u16);
 
 pub struct Pty {

@@ -12,10 +12,7 @@ use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
 use time;
 use byteorder::{BigEndian, ReadBytesExt};
 
-use history::HistoryType;
 use history::History;
-
-use telnet::{IAC, OPTION};
 
 use telnet_server::*;
 

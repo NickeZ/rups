@@ -12,7 +12,7 @@ use tty;
 //use tty::ffi::{WinSize, set_winsize, get_winsize};
 //use mio::deprecated::{PipeReader, PipeWriter};
 
-use history::{History, HistoryType};
+use history::{History};
 
 enum ProcessError {
     ProcessAlreadySpawned,
@@ -69,9 +69,9 @@ impl Process {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(p) => {
                 self.cid = Some(p.id());
-                self.history.borrow_mut().push(
-                    HistoryType::Info,
-                    format!("Successfully spawned {}!\r\n", self.args[0]));
+                //self.history.borrow_mut().push(
+                //    HistoryType::Info,
+                //    format!("Successfully spawned {}!\r\n", self.args[0]));
                 println!("Launched {}", self.args[0]);
             }
         };

@@ -14,9 +14,10 @@ use std::io::Write;
 use std;
 
 use telnet_client::TelnetClient;
-use history::History;
+use history::{History, HistoryReader};
 
 use telnet::{TelnetCodec, TelnetIn};
+use telnet::{IAC, OPTION};
 
 use child;
 
@@ -68,16 +69,15 @@ impl<'a> TelnetServer<'a> {
                         pw_clone.borrow_mut().write(text.as_slice());
                         println!("TEXT: {:?}", text);
                     },
-                    _=>(),
+                    TelnetIn::NAWS {rows, columns} => println!("{:?} {:?}", rows, columns),
+                    TelnetIn::Carriage => println!("CR"),
                 }
                 Ok(())
             }).map_err(|_| ());
 
-            let history = history.clone();
-            let history = history.borrow();
-            let messages = history.reader();
-            //let messages = messages.borrow_mut();
-            let server = writer.send_all(messages)
+            let messages = HistoryReader::new(history.clone());
+            let server = writer
+                .send_all(messages)
                 .then(|_| Ok(()));
             //let server = writer.send("hej\r\n".as_bytes().to_vec()).then(|_| Ok(()));
 

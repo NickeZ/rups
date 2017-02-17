@@ -65,8 +65,8 @@ impl Codec for TelnetCodec {
     type Out = Vec<u8>;
 
     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
-        let last = buf.len() - 1;
-        for token in self.tokenizer.tokenize(buf.drain_to(last).as_slice()) {
+        let mut drain = 0;
+        if let Some(token) = self.tokenizer.tokenize(buf.as_slice()).next() {
             match token {
                 TelnetToken::Text(bytes) => {
                     println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
@@ -74,18 +74,23 @@ impl Codec for TelnetCodec {
                     //for byte in bytes.iter() {
                     //    vec.push(byte);
                     //}
+                    drain = bytes.len();
                     return Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
                 },
                 TelnetToken::Command(command) => {
                     println!("command {:?}", command);
+                    drain = 1;
                     return Ok(None);
                 },
                 TelnetToken::Negotiation{command, channel} => {
-                    println!("negotiation {:?}", command);
+                    println!("negotiation {:?} {:?}", command, channel);
+                    drain = 2;
                     return Ok(None);
                 },
             }
         }
+        println!("Drain to {}", drain);
+        buf.drain_to(drain);
         Ok(None)
     }
 
