@@ -1,8 +1,10 @@
 use std::{io, str};
+use std::io::Cursor;
 
 use tty;
 use tokio_core::io::{Io, Codec, Framed, EasyBuf};
 use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
+use byteorder::{BigEndian, ReadBytesExt};
 
 #[allow(non_snake_case)]
 pub mod IAC {
@@ -65,33 +67,61 @@ impl Codec for TelnetCodec {
     type Out = Vec<u8>;
 
     fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
-        let mut drain = 0;
-        if let Some(token) = self.tokenizer.tokenize(buf.as_slice()).next() {
-            match token {
-                TelnetToken::Text(bytes) => {
-                    println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
-                    //let vec = Vec::new();
-                    //for byte in bytes.iter() {
-                    //    vec.push(byte);
-                    //}
-                    drain = bytes.len();
-                    return Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
-                },
-                TelnetToken::Command(command) => {
-                    println!("command {:?}", command);
-                    drain = 1;
-                    return Ok(None);
-                },
-                TelnetToken::Negotiation{command, channel} => {
-                    println!("negotiation {:?} {:?}", command, channel);
-                    drain = 2;
-                    return Ok(None);
-                },
-            }
+        let len = buf.len();
+        if len == 0 {
+            return Ok(None);
         }
-        println!("Drain to {}", drain);
-        buf.drain_to(drain);
-        Ok(None)
+        let mut res = Ok(None);
+        let mut fin_len = 0;
+        {
+            let mut stream = self.tokenizer.tokenize(buf.as_slice());
+            for token in stream.by_ref() {
+                match token {
+                    TelnetToken::Text(bytes) => {
+                        match self.mode {
+                            TelnetCodecMode::Text => {
+                                //println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
+                                res = Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
+                                break;
+                            },
+                            TelnetCodecMode::NAWS => {
+                                let mut rdr = Cursor::new(bytes);
+                                let cols = From::from(rdr.read_u16::<BigEndian>().unwrap());
+                                let rows = From::from(rdr.read_u16::<BigEndian>().unwrap());
+                                res = Ok(Some(TelnetIn::NAWS{rows: rows, columns: cols}));
+                                break;
+                            }
+                        }
+
+                    },
+                    TelnetToken::Command(command) => {
+                        match command {
+                            IAC::SE => {
+                                match self.mode {
+                                    TelnetCodecMode::NAWS => {
+                                        self.mode = TelnetCodecMode::Text;
+                                    },
+                                    _ => (),
+                                }
+                            },
+                            x => println!("unhandled command {:?}", command),
+                        }
+                    },
+                    TelnetToken::Negotiation{command, channel} => {
+                        match (command, channel) {
+                            (IAC::SB, OPTION::NAWS) => {
+                                self.mode = TelnetCodecMode::NAWS;
+                            },
+                            (_, _) => println!("unhandled negotiation {:?} {:?}", command, channel),
+                        }
+                    },
+                }
+            }
+            fin_len = stream.data.len();
+        }
+        println!("Will drain {} from {}", len - fin_len, len);
+        buf.drain_to(len - fin_len);
+        res
     }
 
     fn encode(&mut self, msg: Vec<u8>, buf: &mut Vec<u8>) -> io::Result<()> {

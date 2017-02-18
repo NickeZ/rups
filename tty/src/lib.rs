@@ -46,9 +46,21 @@ mod tests {
 }
 
 #[derive(Debug)]
-pub struct Rows(u16);
+pub struct Rows(pub u16);
 #[derive(Debug)]
-pub struct Columns(u16);
+pub struct Columns(pub u16);
+
+impl From<u16> for Rows {
+    fn from(val: u16) -> Rows {
+        Rows(val)
+    }
+}
+
+impl From<u16> for Columns {
+    fn from(val: u16) -> Columns {
+        Columns(val)
+    }
+}
 
 pub struct Pty {
     builder: process::Command,

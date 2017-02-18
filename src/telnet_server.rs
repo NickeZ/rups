@@ -67,9 +67,11 @@ impl<'a> TelnetServer<'a> {
                 match msg {
                     TelnetIn::Text {text} => {
                         pw_clone.borrow_mut().write(text.as_slice());
-                        println!("TEXT: {:?}", text);
+                        //println!("TEXT: {:?}", text);
                     },
-                    TelnetIn::NAWS {rows, columns} => println!("{:?} {:?}", rows, columns),
+                    TelnetIn::NAWS {rows, columns} => {
+                        println!("resize to {:?} {:?}", rows, columns);
+                    },
                     TelnetIn::Carriage => println!("CR"),
                 }
                 Ok(())
