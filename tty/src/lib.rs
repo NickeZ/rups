@@ -289,33 +289,31 @@ impl Sink for PipeWriter {
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        let orig_len = self.buf.len();
         let mut res = Ok(Async::NotReady);
-        if self.buf.len() == 0 {
+        if orig_len == 0 {
             return Ok(Async::Ready(()));
         }
-        //let copy:Vec<u8> = self.buf[..].iter().collect();
-        let orig_len = self.buf.len();
-        let mut final_len = 0;
-        //println!("{:?}", copy);
+        let mut written_len = 0;
         {
-        match self.ptyin.write(self.buf.as_slice()) {
-            Ok(len) => {
-                final_len = len;
-                //println!("wrote {} bytes", len);
-                std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
-                if len == orig_len {
-                    res = Ok(Async::Ready(()));
-                }
-            },
-            Err(e) => {
-                //self.buf.append(copy.drain(..).collect().iter());
-                if e.kind() != io::ErrorKind::WouldBlock {
-                    res = Err(e);
-                }
-            },
+            match self.ptyin.write(self.buf.as_slice()) {
+                Ok(len) => {
+                    written_len = len;
+                    //println!("wrote {} bytes", len);
+                    std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
+                    if len == orig_len {
+                        res = Ok(Async::Ready(()));
+                    }
+                },
+                Err(e) => {
+                    //self.buf.append(copy.drain(..).collect().iter());
+                    if e.kind() != io::ErrorKind::WouldBlock {
+                        res = Err(e);
+                    }
+                },
+            }
         }
-        }
-        self.buf.drain(0..final_len);
+        self.buf.drain(0..written_len);
         res
     }
 }
