@@ -12,8 +12,8 @@ use std::ptr;
 use std::process;
 
 //use libc::{winsize, c_int, pid_t, WNOHANG, WIFEXITED, SIGCHLD, TIOCSCTTY, O_NONBLOCK, F_SETFL, F_GETFL};
-use libc::{winsize, TIOCSCTTY, TIOCGWINSZ, TIOCSWINSZ, O_NONBLOCK, F_SETFL, F_GETFL};
-use futures::{Future, Stream, Sink, StartSend, AsyncSink, Async, Poll};
+//use libc::{winsize, TIOCSCTTY, TIOCGWINSZ, TIOCSWINSZ, O_NONBLOCK, F_SETFL, F_GETFL};
+use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
 use mio::unix::EventedFd;
 use tokio_core::reactor::{Handle, PollEvented};
@@ -140,23 +140,8 @@ impl Pty {
         let Columns(ws_col) = columns;
         ws.ws_row = ws_row;
         ws.ws_col = ws_col;
-        set_winsize(&self.io, &ws);
+        set_winsize(&self.io, &ws).expect("Failed to set window size");
     }
-
-    //pub fn register_input(&mut self, handle: &Handle) -> io::Result<Option<PtyIn>>{
-    //fn register_input(&self, handle: &Handle) -> PipeWriter {
-    //    println!("register input");
-    //    // TODO(nc): Remove libc::dup from here...
-    //    let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(self.io.as_raw_fd()))}), handle);
-    //    PipeWriter::new(io.expect("Error creating io").expect("Got None instead of Some"))
-    //}
-
-    ////pub fn register_output(&mut self, handle: &Handle) -> io::Result<Option<PtyOut>>{
-    //fn register_output(&self, handle: &Handle) -> PipeReader {
-    //    println!("register output");
-    //    let io = stdio(Some(unsafe{ Io::from_raw_fd(self.io.as_raw_fd())}), handle);
-    //    PipeReader::new(io.unwrap().unwrap())
-    //}
 
     pub fn output(&mut self) -> &mut Option<PipeReader> {
         &mut self.output
@@ -165,37 +150,7 @@ impl Pty {
     pub fn input(&mut self) -> &mut Option<PipeWriter> {
         &mut self.input
     }
-
-    //pub fn output(&self) -> Option<PtyOut> {
-    //    unimplemented!();
-    //}
-
-    //pub fn output(&self) -> PipeReader {
-    //    unsafe {PipeReader::from_raw_fd(self.master) }
-    //}
-
-    //pub fn input(&self) -> PipeWriter {
-    //    unsafe {PipeWriter::from_raw_fd(self.master) }
-    //}
 }
-
-//pub struct Child {
-//    child: process::Child,
-//    master: libc::c_int,
-//}
-//
-//impl Child {
-//    pub fn new(child: process::Child, master: libc::c_int) -> Child {
-//        Child {
-//            child: child,
-//            master: master,
-//        }
-//    }
-//
-//    pub fn input_close(&self) {
-//        unsafe {libc::close(self.master) };
-//    }
-//}
 
 /// Get raw fds for master/slave ends of a new pty
 #[cfg(target_os = "linux")]
@@ -203,7 +158,7 @@ fn openpty(rows: u16, cols: u16) -> (RawFd, RawFd) {
     let mut master: RawFd = 0;
     let mut slave: RawFd = 0;
 
-    let win = winsize {
+    let win = libc::winsize {
         ws_row: rows as libc::c_ushort,
         ws_col: cols as libc::c_ushort,
         ws_xpixel: 0,
@@ -221,8 +176,8 @@ fn openpty(rows: u16, cols: u16) -> (RawFd, RawFd) {
     (master, slave)
 }
 
-pub fn get_winsize<T>(io: &T) -> io::Result<winsize> where T: AsRawFd {
-    let mut ws = winsize {
+pub fn get_winsize<T>(io: &T) -> io::Result<libc::winsize> where T: AsRawFd {
+    let mut ws = libc::winsize {
         ws_row: 0,
         ws_col: 0,
         ws_xpixel: 0,
@@ -234,7 +189,7 @@ pub fn get_winsize<T>(io: &T) -> io::Result<winsize> where T: AsRawFd {
     }
 }
 
-pub fn set_winsize<T>(io: &T, ws: &winsize) -> io::Result<()> where T: AsRawFd {
+pub fn set_winsize<T>(io: &T, ws: &libc::winsize) -> io::Result<()> where T: AsRawFd {
     match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCSWINSZ, ws) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
@@ -259,41 +214,6 @@ impl PipeReader {
     }
 }
 
-//impl PipeReader {
-//    pub fn from_stdout(stdout: process::ChildStdout) -> io::Result<Self> {
-//        match set_nonblock(stdout.as_raw_fd()) {
-//            Err(e) => return Err(e),
-//            _ => {},
-//        }
-//        return Ok(PipeReader::from(unsafe { Io::from_raw_fd(stdout.into_raw_fd()) }));
-//    }
-//    pub fn from_stderr(stderr: process::ChildStderr) -> io::Result<Self> {
-//        match set_nonblock(stderr.as_raw_fd()) {
-//            Err(e) => return Err(e),
-//            _ => {},
-//        }
-//        return Ok(PipeReader::from(unsafe { Io::from_raw_fd(stderr.into_raw_fd()) }));
-//    }
-//}
-
-//impl Clone for PipeReader {
-//    fn clone(&self) -> PipeReader {
-//        PipeReader { io: unsafe {FromRawFd::from_raw_fd(self.as_raw_fd())} }
-//    }
-//}
-
-//impl Read for PipeReader {
-//    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-//        self.io.read(buf)
-//    }
-//}
-//
-//impl<'a> Read for &'a PipeReader {
-//    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-//        (&self.io).read(buf)
-//    }
-//}
-//
 impl Stream for PipeReader {
     type Item = Vec<u8>;
     type Error = io::Error;
@@ -320,13 +240,6 @@ impl Stream for PipeReader {
     }
 }
 
-//impl From<Io> for PipeReader {
-//    fn from(io: Io) -> PipeReader {
-//        PipeReader { io: io }
-//    }
-//}
-
-//#[derive(Debug)]
 pub struct PipeWriter {
     pub ptyin: PtyIn,
     buf: Vec<u8>,
@@ -341,144 +254,71 @@ impl PipeWriter {
     }
 }
 
-//impl PipeWriter {
-//    pub fn from_stdin(stdin: process::ChildStdin) -> io::Result<Self> {
-//        match set_nonblock(stdin.as_raw_fd()) {
-//            Err(e) => return Err(e),
-//            _ => {},
-//        }
-//        return Ok(PipeWriter::from(unsafe { Io::from_raw_fd(stdin.into_raw_fd()) }));
-//    }
-//}
-
-impl Clone for PipeWriter {
-    fn clone(&self) -> PipeWriter {
-        unimplemented!()
-        //PipeWriter { io: unsafe {FromRawFd::from_raw_fd(self.as_raw_fd())}, buf: Vec::new() }
-    }
-}
-
-//impl Write for PipeWriter {
-//    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-//        self.io.write(buf)
-//    }
-//
-//    fn flush(&mut self) -> io::Result<()> {
-//        self.io.flush()
-//    }
-//}
-//
-//impl<'a> Write for &'a PipeWriter {
-//    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-//        (&self.io).write(buf)
-//    }
-//
-//    fn flush(&mut self) -> io::Result<()> {
-//        (&self.io).flush()
-//    }
-//}
-//
 impl Sink for PipeWriter {
     type SinkItem = Vec<u8>;
     type SinkError = io::Error;
 
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        let mut written_len = 0;
-        if item.len() == 0 {
+        let orig_len = item.len();
+        let written_len;
+        if orig_len == 0 {
             return Ok(AsyncSink::Ready);
         }
         {
-        match self.ptyin.write(item.as_slice()) {
-            Ok(len) => {
-                std::io::Write::flush(self.ptyin.get_mut());
-                written_len = len;
-            },
-            Err(e) => {
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(AsyncSink::NotReady(item));
+            match self.ptyin.write(item.as_slice()) {
+                Ok(len) => {
+                    std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
+                    written_len = len;
+                },
+                Err(e) => {
+                    if e.kind() == io::ErrorKind::WouldBlock {
+                        return Ok(AsyncSink::NotReady(item));
+                    }
+                    return Err(e);
                 }
-                return Err(e);
             }
         }
-        }
         self.buf.clear();
-        for x in item[0..written_len].iter() {
-            self.buf.push(*x);
+        if written_len != orig_len {
+            for x in item[written_len..orig_len-1].iter() {
+                self.buf.push(*x);
+            }
         }
         println!("{:?}", self.buf);
         Ok(AsyncSink::Ready)
     }
 
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        let mut res = Ok(Async::NotReady);
         if self.buf.len() == 0 {
             return Ok(Async::Ready(()));
         }
-        let mut copy:Vec<u8> = self.buf.drain(..).collect();
+        //let copy:Vec<u8> = self.buf[..].iter().collect();
+        let orig_len = self.buf.len();
+        let mut final_len = 0;
         //println!("{:?}", copy);
-        match self.ptyin.write(copy.as_slice()) {
+        {
+        match self.ptyin.write(self.buf.as_slice()) {
             Ok(len) => {
+                final_len = len;
                 //println!("wrote {} bytes", len);
-                std::io::Write::flush(self.ptyin.get_mut());
-                return Ok(Async::Ready(()))
+                std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
+                if len == orig_len {
+                    res = Ok(Async::Ready(()));
+                }
             },
             Err(e) => {
                 //self.buf.append(copy.drain(..).collect().iter());
-                if e.kind() == io::ErrorKind::WouldBlock {
-                    return Ok(Async::NotReady);
+                if e.kind() != io::ErrorKind::WouldBlock {
+                    res = Err(e);
                 }
-                return Err(e);
             },
         }
+        }
+        self.buf.drain(0..final_len);
+        res
     }
 }
-
-//impl From<Io> for PipeWriter {
-//    fn from(io: Io) -> PipeWriter {
-//        PipeWriter { io: io, buf: Vec::new() }
-//    }
-//}
-
-/*
- *
- * ===== Conversions =====
- *
- */
-
-//impl IntoRawFd for PipeReader {
-//    fn into_raw_fd(self) -> RawFd {
-//        self.io.into_raw_fd()
-//    }
-//}
-//
-//impl AsRawFd for PipeReader {
-//    fn as_raw_fd(&self) -> RawFd {
-//        self.io.as_raw_fd()
-//    }
-//}
-//
-//impl FromRawFd for PipeReader {
-//    unsafe fn from_raw_fd(fd: RawFd) -> PipeReader {
-//        PipeReader { io: FromRawFd::from_raw_fd(fd) }
-//    }
-//}
-//
-//impl IntoRawFd for PipeWriter {
-//    fn into_raw_fd(self) -> RawFd {
-//        self.io.into_raw_fd()
-//    }
-//}
-//
-//impl AsRawFd for PipeWriter {
-//    fn as_raw_fd(&self) -> RawFd {
-//        self.io.as_raw_fd()
-//    }
-//}
-//
-//impl FromRawFd for PipeWriter {
-//    unsafe fn from_raw_fd(fd: RawFd) -> PipeWriter {
-//        PipeWriter { io: FromRawFd::from_raw_fd(fd), buf: Vec::new() }
-//    }
-//}
 
 pub fn set_sessionid() -> io::Result<()> {
     unsafe {
@@ -488,15 +328,14 @@ pub fn set_sessionid() -> io::Result<()> {
 
 pub fn set_controlling_terminal(fd: libc::c_int) -> io::Result<()> {
     unsafe {
-        cvt(libc::ioctl(fd, TIOCSCTTY as _, 0)).map(|_| ())
+        cvt(libc::ioctl(fd, libc::TIOCSCTTY as _, 0)).map(|_| ())
     }
 }
 
-
 pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
     unsafe {
-        let flags = libc::fcntl(fd, F_GETFL, 0);
-        cvt(libc::fcntl(fd, F_SETFL, flags | O_NONBLOCK)).map(|_| ())
+        let flags = libc::fcntl(fd, libc::F_GETFL, 0);
+        cvt(libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK)).map(|_| ())
     }
 }
 
@@ -654,8 +493,7 @@ fn stdio<T>(option: Option<T>, handle: &Handle)
     };
 
     // Set the fd to nonblocking before we pass it to the event loop
-    let fd = unsafe {io.as_raw_fd()};
-    set_nonblock(fd)?;
+    set_nonblock(io.as_raw_fd())?;
     let io = try!(PollEvented::new(Fd(io), handle));
     Ok(Some(io))
 }
