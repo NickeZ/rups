@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
+use futures::task::Task;
 
 use telnet::{IAC, OPTION};
 
@@ -18,6 +19,7 @@ pub struct History {
     buffers: VecDeque<HistoryLine>,
     histsize: usize,
     offset: usize,
+    tasks: Vec<Task>,
 }
 
 impl History {
@@ -31,6 +33,17 @@ impl History {
             buffers: buf,
             histsize: histsize,
             offset: 0,
+            tasks: Vec::new(),
+        }
+    }
+
+    pub fn park(&mut self, task: Task) {
+        self.tasks.push(task);
+    }
+
+    pub fn unpark(&mut self) {
+        for task in self.tasks.drain(..) {
+            task.unpark();
         }
     }
 
@@ -83,7 +96,9 @@ impl Sink for HistoryWriter {
     type SinkError = io::Error;
 
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        self.history.borrow_mut().push(HistoryLine::Child{message: item});
+        let mut history = self.history.borrow_mut();
+        history.push(HistoryLine::Child{message: item});
+        history.unpark();
         Ok(AsyncSink::Ready)
     }
     fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
@@ -112,13 +127,15 @@ impl Stream for HistoryReader {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        let history = self.history.borrow();
+        let mut history = self.history.borrow_mut();
         if self.first {
             self.first = false;
             self.index = history.get_offset();
         }
+        //println!("poll1 {:?}", self.index);
         let mut res = Vec::new();
         for entry in history.get_from(self.index) {
+            //println!("poll2 {:?}", entry);
             match entry {
                 &HistoryLine::Child{ref message} => {
                     let mut content = message.clone();
@@ -135,7 +152,9 @@ impl Stream for HistoryReader {
         if res.len() > 0 {
             Ok(Async::Ready(Some(res)))
         } else {
-            ::futures::task::park().unpark();
+            let task = ::futures::task::park();
+            //println!("{:?}", task);
+            history.park(task);
             Ok(Async::NotReady)
         }
     }

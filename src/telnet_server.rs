@@ -53,23 +53,27 @@ impl<'a> TelnetServer<'a> {
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
-        let process_writer = Rc::new(RefCell::new(self.process.pty.input()));
+        let process_writer = Rc::new(RefCell::new(self.process.pty.register_input(&handle)));
         let history = self.history.clone();
         //let history_reader = Rc::new(RefCell::new(self.history.borrow().reader()));
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
 
             let process_writer = process_writer.clone();
+            //let history_clone = history.clone();
 
             let responses = reader.for_each(move |msg| {
                 let mut pw_clone = process_writer.clone();
+                //let history = history_clone.clone();
                 //self.send_process(msg)
                 match msg {
                     TelnetIn::Text {text} => {
-                        pw_clone.borrow_mut().write(text.as_slice());
+                        //pw_clone.borrow_mut().send(text);
+                        pw_clone.borrow_mut().ptyin.write(text.as_slice());
                         //println!("TEXT: {:?}", text);
                     },
                     TelnetIn::NAWS {rows, columns} => {
+                        //self.process.pty.resize(rows, columns);
                         println!("resize to {:?} {:?}", rows, columns);
                     },
                     TelnetIn::Carriage => println!("CR"),

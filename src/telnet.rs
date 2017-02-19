@@ -42,15 +42,13 @@ enum TelnetCodecMode {
 }
 
 pub struct TelnetCodec {
-    tokenizer: TelnetTokenizer,
-    mode: TelnetCodecMode,
+    decoder: Decoder,
 }
 
 impl TelnetCodec {
     pub fn new() -> TelnetCodec {
         TelnetCodec {
-            tokenizer: TelnetTokenizer::new(),
-            mode: TelnetCodecMode::Text,
+            decoder: Decoder::new(),
         }
     }
 }
@@ -71,56 +69,9 @@ impl Codec for TelnetCodec {
         if len == 0 {
             return Ok(None);
         }
-        let mut res = Ok(None);
-        let mut fin_len = 0;
-        {
-            let mut stream = self.tokenizer.tokenize(buf.as_slice());
-            for token in stream.by_ref() {
-                match token {
-                    TelnetToken::Text(bytes) => {
-                        match self.mode {
-                            TelnetCodecMode::Text => {
-                                //println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
-                                res = Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
-                                break;
-                            },
-                            TelnetCodecMode::NAWS => {
-                                let mut rdr = Cursor::new(bytes);
-                                let cols = From::from(rdr.read_u16::<BigEndian>().unwrap());
-                                let rows = From::from(rdr.read_u16::<BigEndian>().unwrap());
-                                res = Ok(Some(TelnetIn::NAWS{rows: rows, columns: cols}));
-                                break;
-                            }
-                        }
-
-                    },
-                    TelnetToken::Command(command) => {
-                        match command {
-                            IAC::SE => {
-                                match self.mode {
-                                    TelnetCodecMode::NAWS => {
-                                        self.mode = TelnetCodecMode::Text;
-                                    },
-                                    _ => (),
-                                }
-                            },
-                            x => println!("unhandled command {:?}", command),
-                        }
-                    },
-                    TelnetToken::Negotiation{command, channel} => {
-                        match (command, channel) {
-                            (IAC::SB, OPTION::NAWS) => {
-                                self.mode = TelnetCodecMode::NAWS;
-                            },
-                            (_, _) => println!("unhandled negotiation {:?} {:?}", command, channel),
-                        }
-                    },
-                }
-            }
-            fin_len = stream.data.len();
-        }
-        println!("Will drain {} from {}", len - fin_len, len);
-        buf.drain_to(len - fin_len);
+        let (res, remainder_len) = self.decoder.decode(buf.as_ref());
+        debug!("Will drain {} from {}", len - remainder_len, len);
+        buf.drain_to(len - remainder_len);
         res
     }
 
@@ -129,5 +80,67 @@ impl Codec for TelnetCodec {
             buf.push(c);
         }
         Ok(())
+    }
+}
+
+struct Decoder {
+    tokenizer: TelnetTokenizer,
+    mode: TelnetCodecMode,
+}
+
+impl Decoder {
+    fn new() -> Decoder {
+        Decoder {
+            tokenizer: TelnetTokenizer::new(),
+            mode: TelnetCodecMode::Text,
+        }
+    }
+
+    fn decode(&mut self, buf: &[u8]) -> (io::Result<Option<TelnetIn>>, usize) {
+        let mut res = Ok(None);
+        let mut stream = self.tokenizer.tokenize(buf);
+        for token in stream.by_ref() {
+            match token {
+                TelnetToken::Text(bytes) => {
+                    match self.mode {
+                        TelnetCodecMode::Text => {
+                            //println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
+                            res = Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
+                            break;
+                        },
+                        TelnetCodecMode::NAWS => {
+                            let mut rdr = Cursor::new(bytes);
+                            let cols = From::from(rdr.read_u16::<BigEndian>().unwrap());
+                            let rows = From::from(rdr.read_u16::<BigEndian>().unwrap());
+                            res = Ok(Some(TelnetIn::NAWS{rows: rows, columns: cols}));
+                            break;
+                        }
+                    }
+
+                },
+                TelnetToken::Command(command) => {
+                    match command {
+                        IAC::SE => {
+                            match self.mode {
+                                TelnetCodecMode::NAWS => {
+                                    self.mode = TelnetCodecMode::Text;
+                                },
+                                _ => (),
+                            }
+                        },
+                        x => println!("unhandled command {:?}", command),
+                    }
+                },
+                TelnetToken::Negotiation{command, channel} => {
+                    match (command, channel) {
+                        (IAC::SB, OPTION::NAWS) => {
+                            self.mode = TelnetCodecMode::NAWS;
+                        },
+                        (_, _) => println!("unhandled negotiation {:?} {:?}", command, channel),
+                    }
+                },
+            }
+        }
+        (res, stream.data.len())
     }
 }

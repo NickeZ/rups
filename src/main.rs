@@ -86,18 +86,15 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         options.command.clone(),
         history.clone(),
         options.foreground,
+        &handle,
     );
     if options.autostart {
         child.spawn();
     }
 
     let hw = HistoryWriter::new(history.clone());
-    let proc_output = hw.send_all(child.pty.output())
+    let proc_output = hw.send_all(child.pty.register_output(&handle))
         .then(|_| Ok(()));
-    //child.pty.output().for_each(move |x| {
-    //    hw.write(x);
-    //    Ok(())
-    //});
 
     let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), &child, options.noinfo);
     if let Some(binds) = options.binds {

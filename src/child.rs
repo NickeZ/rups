@@ -7,6 +7,7 @@ use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
 
 use tty;
+use tokio_core::reactor::Handle;
 
 //use tty::{TtyServer, FileDesc};
 //use tty::ffi::{WinSize, set_winsize, get_winsize};
@@ -33,8 +34,9 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool) -> Process {
+    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: &Handle) -> Process {
         let mut pty = tty::Pty::new(&args[0]);
+        //pty.register(handle);
         if args.len() > 1 {
             for arg in args[1..].iter() {
                 pty.arg(arg);
