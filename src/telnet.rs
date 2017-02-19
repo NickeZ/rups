@@ -128,7 +128,7 @@ impl Decoder {
                                 _ => (),
                             }
                         },
-                        x => println!("unhandled command {:?}", command),
+                        command => println!("unhandled command {:?}", command),
                     }
                 },
                 TelnetToken::Negotiation{command, channel} => {

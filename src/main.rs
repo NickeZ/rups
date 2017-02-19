@@ -22,13 +22,13 @@ mod child;
 mod options;
 mod telnet;
 
-use std::io::prelude::*;
-use std::os::unix::io::{FromRawFd};
+//use std::io::prelude::*;
+//use std::os::unix::io::{FromRawFd};
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 
-use futures::{Future, Stream, Sink};
+use futures::{Future, Sink};
 
 //use mio::*;
 //use mio::timer::{Timer};
@@ -38,8 +38,8 @@ use termios::*;
 //use log::LogLevel;
 
 use history::*;
-use telnet_server::*;
-use child::Process;
+//use telnet_server::*;
+//use child::Process;
 use options::Options;
 
 fn push_info(history:&Rc<RefCell<History>>, message:String) {
@@ -76,7 +76,7 @@ fn main() {
 }
 
 
-fn run(mut options: Options, _sdone: chan::Sender<()>) {
+fn run(options: Options, _sdone: chan::Sender<()>) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let handle = core.handle();
 
@@ -89,9 +89,9 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
         &handle,
     );
     if options.autostart {
-        child.spawn();
+        child.spawn().expect("Failed to launch process");
     }
-    let mut child = Rc::new(RefCell::new(child));
+    let child = Rc::new(RefCell::new(child));
 
     let hw = HistoryWriter::new(history.clone());
     let proc_output = hw.send_all(child.borrow_mut().pty.output().take().unwrap())

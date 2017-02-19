@@ -17,6 +17,7 @@ use tokio_core::reactor::Handle;
 
 use history::{History};
 
+#[derive(Debug)]
 enum ProcessError {
     ProcessAlreadySpawned,
 }
