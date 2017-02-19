@@ -91,12 +91,13 @@ fn run(mut options: Options, _sdone: chan::Sender<()>) {
     if options.autostart {
         child.spawn();
     }
+    let mut child = Rc::new(RefCell::new(child));
 
     let hw = HistoryWriter::new(history.clone());
-    let proc_output = hw.send_all(child.pty.register_output(&handle))
+    let proc_output = hw.send_all(child.borrow().pty.register_output(&handle))
         .then(|_| Ok(()));
 
-    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), &child, options.noinfo);
+    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child, options.noinfo);
     if let Some(binds) = options.binds {
         for bind in binds {
             telnet_server.bind(&bind, core.handle());

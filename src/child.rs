@@ -5,6 +5,8 @@ use std::io::prelude::*;
 use std::io::{self};
 use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
+use std::collections::HashMap;
+use std::net::SocketAddr;
 
 use tty;
 use tokio_core::reactor::Handle;
@@ -29,6 +31,7 @@ pub struct Process {
     pub pty: tty::Pty,
     cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
+    window_sizes: HashMap<SocketAddr, (tty::Rows, tty::Columns)>
     //stdin: PipeWriter,
     //stdout: PipeReader,
 }
@@ -51,6 +54,7 @@ impl Process {
             pty: pty,
             cid: None,
             exit_status: None,
+            window_sizes: HashMap::new(),
             //stdin: stdin,
             //stdout: stdout,
         }
@@ -78,6 +82,20 @@ impl Process {
             }
         };
         Ok(())
+    }
+
+    pub fn set_window_size(&mut self, addr: SocketAddr, ws: (tty::Rows, tty::Columns)) {
+        self.window_sizes.entry(addr).or_insert(ws);
+        let mut min_ws = (From::from(u16::max_value()), From::from(u16::max_value()));
+        for (_, ws) in &self.window_sizes {
+            if ws.0 < min_ws.0 {
+                min_ws.0 = ws.0;
+            }
+            if ws.1 < min_ws.1 {
+                min_ws.1 = ws.1;
+            }
+        }
+        self.pty.set_window_size(min_ws.0, min_ws.1);
     }
 
     //pub fn split(self) -> Result<(tty::PipeWriter, tty::PipeReader), ()> {

@@ -19,6 +19,8 @@ use history::{History, HistoryReader};
 use telnet::{TelnetCodec, TelnetIn};
 use telnet::{IAC, OPTION};
 
+use tty;
+
 use child;
 
 #[derive(PartialEq, Copy, Clone)]
@@ -34,36 +36,41 @@ pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
     Box::new(fut)
 }
 
-pub struct TelnetServer<'a> {
-    process: &'a child::Process,
+pub struct TelnetServer {
+    process: Rc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
+    min_window_size: (tty::Rows, tty::Columns),
 }
 
-impl<'a> TelnetServer<'a> {
-    pub fn new(history: Rc<RefCell<History>>, process: &'a child::Process, noinfo: bool) -> TelnetServer {
+impl TelnetServer {
+    pub fn new(history: Rc<RefCell<History>>, process: Rc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
         TelnetServer {
             process: process,
             history: history,
             noinfo: noinfo,
             listeners: Vec::new(),
+            min_window_size: (From::from(u16::max_value()), From::from(u16::max_value())),
         }
     }
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
-        let process_writer = Rc::new(RefCell::new(self.process.pty.register_input(&handle)));
+        let process_writer = Rc::new(RefCell::new(self.process.borrow().pty.register_input(&handle)));
         let history = self.history.clone();
+        let process_clone = self.process.clone();
         //let history_reader = Rc::new(RefCell::new(self.history.borrow().reader()));
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
 
             let process_writer = process_writer.clone();
+            let process_clone = process_clone.clone();
             //let history_clone = history.clone();
 
             let responses = reader.for_each(move |msg| {
                 let mut pw_clone = process_writer.clone();
+                let process_clone = process_clone.clone();
                 //let history = history_clone.clone();
                 //self.send_process(msg)
                 match msg {
@@ -75,6 +82,7 @@ impl<'a> TelnetServer<'a> {
                     TelnetIn::NAWS {rows, columns} => {
                         //self.process.pty.resize(rows, columns);
                         println!("resize to {:?} {:?}", rows, columns);
+                        process_clone.borrow_mut().set_window_size(peer_addr, (rows, columns));
                     },
                     TelnetIn::Carriage => println!("CR"),
                 }

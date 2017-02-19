@@ -48,9 +48,9 @@ mod tests {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Rows(pub u16);
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Columns(pub u16);
 
 impl From<u16> for Rows {
@@ -123,7 +123,7 @@ impl Pty {
         self.builder.spawn()
     }
 
-    pub fn set_window_size(rows: Rows, columns: Columns) {
+    pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
         //let mut ws = get_winsize(stdin).unwrap()
         //ws.ws_row = Rows;
         //ws.ws_col = Columns;
