@@ -76,7 +76,7 @@ impl Pty {
     pub fn new<S>(program: S, handle: &Handle) -> Pty
         where S: AsRef<OsStr>
     {
-        let (master, slave) = openpty(24 as u8, 80 as u8);
+        let (master, slave) = openpty(24u16, 80u16);
         set_nonblock(master).unwrap();
 
         let mut builder = process::Command::new(program);
@@ -199,7 +199,7 @@ impl Pty {
 
 /// Get raw fds for master/slave ends of a new pty
 #[cfg(target_os = "linux")]
-fn openpty(rows: u8, cols: u8) -> (RawFd, RawFd) {
+fn openpty(rows: u16, cols: u16) -> (RawFd, RawFd) {
     let mut master: RawFd = 0;
     let mut slave: RawFd = 0;
 
