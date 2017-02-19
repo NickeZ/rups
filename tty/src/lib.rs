@@ -49,9 +49,9 @@ mod tests {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Rows(pub u16);
+pub struct Rows(libc::c_ushort);
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Columns(pub u16);
+pub struct Columns(libc::c_ushort);
 
 impl From<u16> for Rows {
     fn from(val: u16) -> Rows {
@@ -136,8 +136,10 @@ impl Pty {
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
         println!("set {:?} {:?}", rows, columns);
         let mut ws = get_winsize(&self.io).unwrap();
-        ws.ws_row = Rows as u16;
-        ws.ws_col = Columns as u16;
+        let Rows(ws_row) = rows;
+        let Columns(ws_col) = columns;
+        ws.ws_row = ws_row;
+        ws.ws_col = ws_col;
         set_winsize(&self.io, &ws);
     }
 
@@ -219,16 +221,8 @@ fn openpty(rows: u8, cols: u8) -> (RawFd, RawFd) {
     (master, slave)
 }
 
-#[repr(C)]
-pub struct WinSize {
-    ws_row: libc::c_ushort,
-    ws_col: libc::c_ushort,
-    ws_xpixel: libc::c_ushort,
-    ws_ypixel: libc::c_ushort,
-}
-
-pub fn get_winsize<T>(io: &T) -> io::Result<WinSize> where T: AsRawFd {
-    let mut ws = WinSize {
+pub fn get_winsize<T>(io: &T) -> io::Result<winsize> where T: AsRawFd {
+    let mut ws = winsize {
         ws_row: 0,
         ws_col: 0,
         ws_xpixel: 0,
@@ -240,7 +234,7 @@ pub fn get_winsize<T>(io: &T) -> io::Result<WinSize> where T: AsRawFd {
     }
 }
 
-pub fn set_winsize<T>(io: &T, ws: &WinSize) -> io::Result<()> where T: AsRawFd {
+pub fn set_winsize<T>(io: &T, ws: &winsize) -> io::Result<()> where T: AsRawFd {
     match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCSWINSZ, ws) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
