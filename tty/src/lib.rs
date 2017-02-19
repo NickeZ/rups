@@ -12,7 +12,7 @@ use std::ptr;
 use std::process;
 
 //use libc::{winsize, c_int, pid_t, WNOHANG, WIFEXITED, SIGCHLD, TIOCSCTTY, O_NONBLOCK, F_SETFL, F_GETFL};
-use libc::{winsize, TIOCSCTTY, O_NONBLOCK, F_SETFL, F_GETFL};
+use libc::{winsize, TIOCSCTTY, TIOCGWINSZ, TIOCSWINSZ, O_NONBLOCK, F_SETFL, F_GETFL};
 use futures::{Future, Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
 use mio::unix::EventedFd;
@@ -68,10 +68,12 @@ impl From<u16> for Columns {
 pub struct Pty {
     builder: process::Command,
     io: Io,
+    input: Option<PipeWriter>,
+    output: Option<PipeReader>,
 }
 
 impl Pty {
-    pub fn new<S>(program: S) -> Pty
+    pub fn new<S>(program: S, handle: &Handle) -> Pty
         where S: AsRef<OsStr>
     {
         let (master, slave) = openpty(24 as u8, 80 as u8);
@@ -106,9 +108,17 @@ impl Pty {
             // If child dies, reap it
             libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
+        let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(master))}), handle);
+        let output = PipeReader::new(io.unwrap().unwrap());
+
+        let io = stdio(Some(unsafe{ Io::from_raw_fd(master)}), handle);
+        let input = PipeWriter::new(io.expect("Error creating io").expect("Got None instead of Some"));
+
         Pty {
             builder: builder,
             io: unsafe {Io::from_raw_fd(master)},
+            input: Some(input),
+            output: Some(output),
         }
     }
 
@@ -124,25 +134,34 @@ impl Pty {
     }
 
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
-        //let mut ws = get_winsize(stdin).unwrap()
-        //ws.ws_row = Rows;
-        //ws.ws_col = Columns;
-        //set_winsize(stdin, &ws);
+        println!("set {:?} {:?}", rows, columns);
+        let mut ws = get_winsize(&self.io).unwrap();
+        ws.ws_row = Rows as u16;
+        ws.ws_col = Columns as u16;
+        set_winsize(&self.io, &ws);
     }
 
     //pub fn register_input(&mut self, handle: &Handle) -> io::Result<Option<PtyIn>>{
-    pub fn register_input(&self, handle: &Handle) -> PipeWriter {
-        println!("register input");
-        // TODO(nc): Remove libc::dup from here...
-        let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(self.io.as_raw_fd()))}), handle);
-        PipeWriter::new(io.expect("Error creating io").expect("Got None instead of Some"))
+    //fn register_input(&self, handle: &Handle) -> PipeWriter {
+    //    println!("register input");
+    //    // TODO(nc): Remove libc::dup from here...
+    //    let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(self.io.as_raw_fd()))}), handle);
+    //    PipeWriter::new(io.expect("Error creating io").expect("Got None instead of Some"))
+    //}
+
+    ////pub fn register_output(&mut self, handle: &Handle) -> io::Result<Option<PtyOut>>{
+    //fn register_output(&self, handle: &Handle) -> PipeReader {
+    //    println!("register output");
+    //    let io = stdio(Some(unsafe{ Io::from_raw_fd(self.io.as_raw_fd())}), handle);
+    //    PipeReader::new(io.unwrap().unwrap())
+    //}
+
+    pub fn output(&mut self) -> &mut Option<PipeReader> {
+        &mut self.output
     }
 
-    //pub fn register_output(&mut self, handle: &Handle) -> io::Result<Option<PtyOut>>{
-    pub fn register_output(&self, handle: &Handle) -> PipeReader {
-        println!("register output");
-        let io = stdio(Some(unsafe{ Io::from_raw_fd(self.io.as_raw_fd())}), handle);
-        PipeReader::new(io.unwrap().unwrap())
+    pub fn input(&mut self) -> &mut Option<PipeWriter> {
+        &mut self.input
     }
 
     //pub fn output(&self) -> Option<PtyOut> {
@@ -200,6 +219,33 @@ fn openpty(rows: u8, cols: u8) -> (RawFd, RawFd) {
     (master, slave)
 }
 
+#[repr(C)]
+pub struct WinSize {
+    ws_row: libc::c_ushort,
+    ws_col: libc::c_ushort,
+    ws_xpixel: libc::c_ushort,
+    ws_ypixel: libc::c_ushort,
+}
+
+pub fn get_winsize<T>(io: &T) -> io::Result<WinSize> where T: AsRawFd {
+    let mut ws = WinSize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) } {
+        0 => Ok(ws),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+pub fn set_winsize<T>(io: &T, ws: &WinSize) -> io::Result<()> where T: AsRawFd {
+    match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCSWINSZ, ws) } {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
 
 /*
  *

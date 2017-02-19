@@ -38,7 +38,7 @@ pub struct Process {
 
 impl Process {
     pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: &Handle) -> Process {
-        let mut pty = tty::Pty::new(&args[0]);
+        let mut pty = tty::Pty::new(&args[0], handle);
         //pty.register(handle);
         if args.len() > 1 {
             for arg in args[1..].iter() {
@@ -85,7 +85,8 @@ impl Process {
     }
 
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (tty::Rows, tty::Columns)) {
-        self.window_sizes.entry(addr).or_insert(ws);
+        println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
+        self.window_sizes.insert(addr, ws);
         let mut min_ws = (From::from(u16::max_value()), From::from(u16::max_value()));
         for (_, ws) in &self.window_sizes {
             if ws.0 < min_ws.0 {

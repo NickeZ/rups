@@ -39,6 +39,7 @@ pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
 pub struct TelnetServer {
     process: Rc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
+    child_writer: Rc<RefCell<tty::PipeWriter>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
     min_window_size: (tty::Rows, tty::Columns),
@@ -46,9 +47,11 @@ pub struct TelnetServer {
 
 impl TelnetServer {
     pub fn new(history: Rc<RefCell<History>>, process: Rc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
+        let child_writer = process.borrow_mut().pty.input().take().unwrap();
         TelnetServer {
             process: process,
             history: history,
+            child_writer: Rc::new(RefCell::new(child_writer)),
             noinfo: noinfo,
             listeners: Vec::new(),
             min_window_size: (From::from(u16::max_value()), From::from(u16::max_value())),
@@ -57,7 +60,8 @@ impl TelnetServer {
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
-        let process_writer = Rc::new(RefCell::new(self.process.borrow().pty.register_input(&handle)));
+        //let process_writer = Rc::new(RefCell::new(*self.process.borrow().pty.input()));
+        let process_writer = self.child_writer.clone();
         let history = self.history.clone();
         let process_clone = self.process.clone();
         //let history_reader = Rc::new(RefCell::new(self.history.borrow().reader()));
@@ -81,7 +85,7 @@ impl TelnetServer {
                     },
                     TelnetIn::NAWS {rows, columns} => {
                         //self.process.pty.resize(rows, columns);
-                        println!("resize to {:?} {:?}", rows, columns);
+                        //println!("resize to {:?} {:?}", rows, columns);
                         process_clone.borrow_mut().set_window_size(peer_addr, (rows, columns));
                     },
                     TelnetIn::Carriage => println!("CR"),
