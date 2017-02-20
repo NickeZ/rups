@@ -100,7 +100,7 @@ impl Options {
                                .multiple(true))
                           .get_matches();
 
-        options.command = values_t!(matches, "command", String).expect("Argument 'command' missing");
+        options.command = matches.values_of("command").expect("Argument 'command' missing").map(|x| String::from(x)).collect();
 
         options.foreground = matches.is_present("foreground");
         options.autorestart = !matches.is_present("noautorestart");
@@ -114,12 +114,14 @@ impl Options {
         if let Ok(history_size) = value_t!(matches, "histsize", usize) {
             options.history_size = history_size;
         }
-        if let Ok(bindv) = values_t!(matches, "bind", String) {
+        if let Some(bindv) = matches.values_of("bind") {
             // TODO(nc): Interpret ip:port, port, unix socket
+            let bindv = bindv.collect::<Vec<&str>>();
             options.binds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
         }
-        if let Ok(bindv) = values_t!(matches, "logbind", String) {
+        if let Some(bindv) = matches.values_of("logbind") {
             // TODO(nc): Interpret ip:port, port, unix socket
+            let bindv = bindv.collect::<Vec<&str>>();
             options.logbinds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
         }
         options
