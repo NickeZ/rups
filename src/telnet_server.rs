@@ -1,47 +1,45 @@
-use std::collections::{HashMap};
+//use std::collections::{HashMap};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::net::{SocketAddr};
-use std::error::{Error};
+//use std::error::{Error};
 //use mio::*;
 //use mio::tcp::{TcpListener};
 use tokio_core;
-use tokio_core::net::{TcpListener, TcpStream};
+use tokio_core::net::{TcpListener};
 use tokio_core::io::Io;
-use futures::{self, Stream, Sink, Poll, Async, Future};
+use futures::{self, Stream, Sink, Future};
 use std::io;
 use std::io::Write;
-use std;
 
-use telnet_client::TelnetClient;
+//use telnet_client::TelnetClient;
 use history::{History, HistoryReader};
 
-use rust_telnet::codec::{TelnetCodec, TelnetIn, IAC, OPTION};
+use rust_telnet::codec::{TelnetCodec, TelnetIn};
 
-use pty;
+use pty::PipeWriter;
 
 use child;
 
-#[derive(PartialEq, Copy, Clone)]
-pub enum BindKind {
-    Control,
-    Log,
-}
+//#[derive(PartialEq, Copy, Clone)]
+//pub enum BindKind {
+//    Control,
+//    Log,
+//}
 
-pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
-    let fut = tokio_core::io::write_all(socket, b"hej!\r\n")
-        .map(|x| ())
-        .map_err(|e| ());
-    Box::new(fut)
-}
+//pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
+//    let fut = tokio_core::io::write_all(socket, b"hej!\r\n")
+//        .map(|x| ())
+//        .map_err(|e| ());
+//    Box::new(fut)
+//}
 
 pub struct TelnetServer {
     process: Rc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
-    child_writer: Rc<RefCell<pty::PipeWriter>>,
+    child_writer: Rc<RefCell<PipeWriter>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
-    min_window_size: (pty::Rows, pty::Columns),
 }
 
 impl TelnetServer {
@@ -53,7 +51,6 @@ impl TelnetServer {
             child_writer: Rc::new(RefCell::new(child_writer)),
             noinfo: noinfo,
             listeners: Vec::new(),
-            min_window_size: (From::from(u16::max_value()), From::from(u16::max_value())),
         }
     }
 
@@ -72,14 +69,15 @@ impl TelnetServer {
             //let history_clone = history.clone();
 
             let responses = reader.for_each(move |msg| {
-                let mut pw_clone = process_writer.clone();
+                let pw_clone = process_writer.clone();
                 let process_clone = process_clone.clone();
                 //let history = history_clone.clone();
                 //self.send_process(msg)
                 match msg {
                     TelnetIn::Text {text} => {
                         //pw_clone.borrow_mut().send(text);
-                        pw_clone.borrow_mut().ptyin.write(text.as_slice());
+                        //TODO(nc): this is an async write.. might fail..
+                        pw_clone.borrow_mut().ptyin.write(text.as_slice()).unwrap();
                         //println!("TEXT: {:?}", text);
                     },
                     TelnetIn::NAWS {rows, columns} => {
@@ -105,8 +103,8 @@ impl TelnetServer {
         self.listeners.push(Box::new(sserver))
     }
 
-    pub fn server(mut self) -> Box<Future<Item=(), Error=io::Error>>{
-        let server = futures::future::join_all(self.listeners).map(|x|());
+    pub fn server(self) -> Box<Future<Item=(), Error=io::Error>>{
+        let server = futures::future::join_all(self.listeners).map(|_|());
         return Box::new(server);
     }
 

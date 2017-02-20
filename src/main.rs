@@ -18,7 +18,7 @@ extern crate tokio_core;
 
 mod history;
 mod telnet_server;
-mod telnet_client;
+//mod telnet_client;
 mod child;
 mod options;
 
@@ -42,9 +42,9 @@ use history::*;
 //use child::Process;
 use options::Options;
 
-fn push_info(history:&Rc<RefCell<History>>, message:String) {
-    history.borrow_mut().push(HistoryLine::Info{message: message});
-}
+//fn push_info(history:&Rc<RefCell<History>>, message:String) {
+//    history.borrow_mut().push(HistoryLine::Info{message: message});
+//}
 
 fn main() {
     env_logger::init().unwrap();

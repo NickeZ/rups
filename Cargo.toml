@@ -1,28 +1,29 @@
 [package]
-name = "rups"
-version = "0.1.0"
 authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
-description = """\
-    Rust Process Server lets you connect to your processes via telnet.\
-    It is heavily inspired by procServ.\
-    """
+description = "Rust Process Server lets you connect to your processes via telnet.It is heavily inspired by procServ."
 homepage = "https://github.com/NickeZ/rups"
+name = "rups"
 repository = "https://github.com/NickeZ/rups"
+version = "0.1.0"
 
 [dependencies]
-log = "0.3.6"
-env_logger = "0.3.5"
-clap = "2.18.0"
-mio = "0.6.1"
-slab = "0.3.0"
-time = "0.1.35"
+byteorder = "1.0.0"
 chan = "0.1.18"
 chan-signal = "0.1.7"
-libc = "0.2"
+clap = "2.20.5"
+env_logger = "0.3.5"
 fd = "0.2.2"
-termios = "0.2.2"
-byteorder = "1.0.0"
-pty = {path = "pty"}
 futures = "0.1.10"
+libc = "0.2"
+log = "0.3.6"
+mio = "0.6.1"
+slab = "0.3.0"
+termios = "0.2.2"
+time = "0.1.35"
 tokio-core = "0.1.4"
-rust-telnet = {path = "rust-telnet"}
+
+[dependencies.pty]
+path = "pty"
+
+[dependencies.rust-telnet]
+path = "rust-telnet"

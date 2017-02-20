@@ -12,7 +12,7 @@ use rust_telnet::codec::{IAC, OPTION};
 pub enum HistoryLine {
     Child {message: Vec<u8>},
     Command (Vec<u8>),
-    Info {message: String},
+    //Info {message: String},
 }
 
 pub struct History {
@@ -145,7 +145,7 @@ impl Stream for HistoryReader {
                     let mut content = cmd.clone();
                     res.append(&mut content);
                 },
-                e => println!("unkonwn entry {:?}", e),
+                //e => println!("unkonwn entry {:?}", e),
             }
             self.index = self.index + 1;
         }

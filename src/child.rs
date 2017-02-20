@@ -1,9 +1,9 @@
 use std::process;
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::io::prelude::*;
-use std::io::{self};
-use std::os::unix::io::{FromRawFd, AsRawFd};
+//use std::io::prelude::*;
+//use std::io::{self};
+//use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -18,7 +18,7 @@ use tokio_core::reactor::Handle;
 use history::{History};
 
 #[derive(Debug)]
-enum ProcessError {
+pub enum ProcessError {
     ProcessAlreadySpawned,
 }
 
@@ -62,15 +62,9 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
-        //if self.child.is_some() {
-        //    return Err(ProcessError::ProcessAlreadySpawned);
-        //}
-        //let mut command = pty::Command::new(&self.args[0]);
-        //if self.args.len() > 1 {
-        //    for arg in self.args[1..].iter() {
-        //        command.arg(arg);
-        //    }
-        //}
+        if self.cid.is_some() {
+            return Err(ProcessError::ProcessAlreadySpawned);
+        }
 
         match self.pty.spawn() {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
@@ -144,20 +138,20 @@ impl Process {
     //    &self.stdout
     //}
 
-    pub fn kill(&mut self) {
-        //if self.is_alive() {
-        //    //self.child.as_mut().unwrap().kill().expect("Failed to kill process");
-        //    println!("TODO kill process..");
-        //}
-    }
+    //pub fn kill(&mut self) {
+    //    if self.is_alive() {
+    //        self.child.as_mut().unwrap().kill().expect("Failed to kill process");
+    //        println!("TODO kill process..");
+    //    }
+    //}
 
     //pub fn is_alive(&self) -> bool {
     //    self.child.is_some() && self.exit_status.is_none()
     //}
 
-    pub fn send(&mut self, msg:String) {
-        self.mailbox.push(msg);
-    }
+    //pub fn send(&mut self, msg:String) {
+    //    self.mailbox.push(msg);
+    //}
 
     //pub fn write(&mut self) {
     //    for msg in self.mailbox.drain(..) {

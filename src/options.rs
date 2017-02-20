@@ -125,7 +125,7 @@ impl Options {
         options
     }
 
-    pub fn toggle_autorestart(&mut self) {
-        self.autorestart = ! self.autorestart;
-    }
+    //pub fn toggle_autorestart(&mut self) {
+    //    self.autorestart = ! self.autorestart;
+    //}
 }
