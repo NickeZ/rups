@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
 use futures::task::Task;
 
-use telnet::{IAC, OPTION};
+use rust_telnet::codec::{IAC, OPTION};
 
 #[derive(Debug, PartialEq)]
 pub enum HistoryLine {

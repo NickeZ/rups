@@ -8,11 +8,11 @@ use std::error::{Error};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
-use tty;
+use pty;
 use tokio_core::reactor::Handle;
 
-//use tty::{TtyServer, FileDesc};
-//use tty::ffi::{WinSize, set_winsize, get_winsize};
+//use pty::{TtyServer, FileDesc};
+//use pty::ffi::{WinSize, set_winsize, get_winsize};
 //use mio::deprecated::{PipeReader, PipeWriter};
 
 use history::{History};
@@ -28,18 +28,18 @@ pub struct Process {
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
     foreground: bool,
-    //ttyserver: TtyServer,
-    pub pty: tty::Pty,
+    //ptyserver: TtyServer,
+    pub pty: pty::Pty,
     cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
-    window_sizes: HashMap<SocketAddr, (tty::Rows, tty::Columns)>
+    window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>
     //stdin: PipeWriter,
     //stdout: PipeReader,
 }
 
 impl Process {
     pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: &Handle) -> Process {
-        let mut pty = tty::Pty::new(&args[0], handle);
+        let mut pty = pty::Pty::new(&args[0], handle);
         //pty.register(handle);
         if args.len() > 1 {
             for arg in args[1..].iter() {
@@ -51,7 +51,7 @@ impl Process {
             history: history,
             mailbox: Vec::new(),
             foreground: foreground,
-            //ttyserver: ttyserver,
+            //ptyserver: ptyserver,
             pty: pty,
             cid: None,
             exit_status: None,
@@ -65,7 +65,7 @@ impl Process {
         //if self.child.is_some() {
         //    return Err(ProcessError::ProcessAlreadySpawned);
         //}
-        //let mut command = tty::Command::new(&self.args[0]);
+        //let mut command = pty::Command::new(&self.args[0]);
         //if self.args.len() > 1 {
         //    for arg in self.args[1..].iter() {
         //        command.arg(arg);
@@ -85,7 +85,7 @@ impl Process {
         Ok(())
     }
 
-    pub fn set_window_size(&mut self, addr: SocketAddr, ws: (tty::Rows, tty::Columns)) {
+    pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
         println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
         self.window_sizes.insert(addr, ws);
         let mut min_ws = (From::from(u16::max_value()), From::from(u16::max_value()));
@@ -100,7 +100,7 @@ impl Process {
         self.pty.set_window_size(min_ws.0, min_ws.1);
     }
 
-    //pub fn split(self) -> Result<(tty::PipeWriter, tty::PipeReader), ()> {
+    //pub fn split(self) -> Result<(pty::PipeWriter, pty::PipeReader), ()> {
     //    match self.child {
     //        Some(child) => Ok((child.input(), child.output())),
     //        None => {
@@ -110,11 +110,11 @@ impl Process {
     //    }
     //}
 
-    //pub fn output(&mut self) -> tty::PipeReader {
+    //pub fn output(&mut self) -> pty::PipeReader {
     //    self.child.unwrap().output()
     //}
 
-    //pub fn input(&mut self) -> tty::PipeWriter {
+    //pub fn input(&mut self) -> pty::PipeWriter {
     //    self.child.unwrap().input()
     //}
 

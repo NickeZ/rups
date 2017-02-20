@@ -1,10 +1,15 @@
+#[test]
+fn it_works() {
+}
+
+
 use std::{io, str};
 use std::io::Cursor;
 
-use tty;
-use tokio_core::io::{Io, Codec, Framed, EasyBuf};
-use rust_telnet::parser::{TelnetTokenizer, TelnetToken};
+use tokio_core::io::{Codec, EasyBuf};
 use byteorder::{BigEndian, ReadBytesExt};
+
+use parser::{TelnetTokenizer, TelnetToken};
 
 #[allow(non_snake_case)]
 pub mod IAC {
@@ -56,7 +61,7 @@ impl TelnetCodec {
 pub enum TelnetIn {
     Text {text:Vec<u8>},
     Carriage,
-    NAWS {rows:tty::Rows, columns:tty::Columns},
+    NAWS {rows:u16, columns:u16},
 }
 //pub struct TelnetOut;
 
@@ -70,7 +75,7 @@ impl Codec for TelnetCodec {
             return Ok(None);
         }
         let (res, remainder_len) = self.decoder.decode(buf.as_ref());
-        debug!("Will drain {} from {}", len - remainder_len, len);
+        println!("Will drain {} from {}", len - remainder_len, len);
         buf.drain_to(len - remainder_len);
         res
     }

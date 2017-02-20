@@ -16,10 +16,9 @@ use std;
 use telnet_client::TelnetClient;
 use history::{History, HistoryReader};
 
-use telnet::{TelnetCodec, TelnetIn};
-use telnet::{IAC, OPTION};
+use rust_telnet::codec::{TelnetCodec, TelnetIn, IAC, OPTION};
 
-use tty;
+use pty;
 
 use child;
 
@@ -39,10 +38,10 @@ pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
 pub struct TelnetServer {
     process: Rc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
-    child_writer: Rc<RefCell<tty::PipeWriter>>,
+    child_writer: Rc<RefCell<pty::PipeWriter>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
-    min_window_size: (tty::Rows, tty::Columns),
+    min_window_size: (pty::Rows, pty::Columns),
 }
 
 impl TelnetServer {
@@ -86,7 +85,7 @@ impl TelnetServer {
                     TelnetIn::NAWS {rows, columns} => {
                         //self.process.pty.resize(rows, columns);
                         //println!("resize to {:?} {:?}", rows, columns);
-                        process_clone.borrow_mut().set_window_size(peer_addr, (rows, columns));
+                        process_clone.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
                     },
                     TelnetIn::Carriage => println!("CR"),
                 }
