@@ -100,7 +100,10 @@ impl Options {
                                .multiple(true))
                           .get_matches();
 
-        options.command = matches.values_of("command").expect("Argument 'command' missing").map(|x| String::from(x)).collect();
+        options.command = matches.values_of("command")
+            .expect("Argument 'command' missing")
+            .map(String::from)
+            .collect();
 
         options.foreground = matches.is_present("foreground");
         options.autorestart = !matches.is_present("noautorestart");
