@@ -42,7 +42,7 @@ mod tests {
             .send(vec!['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8, '\x04' as u8])
             .and_then(|f| f.flush());
             //.map(|_| child.input_close());
-            //.and_then(|f| {child.input_close(); Box::new(Future::new<PipeWriter::Item, std::io::Error>()) });
+            //.and_then(|f| {child.input_close(); Box::new(Future::new<FdSink::Item, std::io::Error>()) });
 
         core.run(input.join(output)).unwrap();
     }
@@ -68,8 +68,8 @@ impl From<u16> for Columns {
 pub struct Pty {
     builder: process::Command,
     io: Io,
-    input: Option<PipeWriter>,
-    output: Option<PipeReader>,
+    input: Option<FdSink>,
+    output: Option<FdStream>,
 }
 
 impl Pty {
@@ -109,10 +109,10 @@ impl Pty {
             libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
         let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(master))}), handle);
-        let output = PipeReader::new(io.unwrap().unwrap());
+        let output = FdStream::new(io.unwrap().unwrap());
 
         let io = stdio(Some(unsafe{ Io::from_raw_fd(master)}), handle);
-        let input = PipeWriter::new(io.expect("Error creating io").expect("Got None instead of Some"));
+        let input = FdSink::new(io.expect("Error creating io").expect("Got None instead of Some"));
 
         Pty {
             builder: builder,
@@ -143,11 +143,11 @@ impl Pty {
         set_winsize(&self.io, &ws).expect("Failed to set window size");
     }
 
-    pub fn output(&mut self) -> &mut Option<PipeReader> {
+    pub fn output(&mut self) -> &mut Option<FdStream> {
         &mut self.output
     }
 
-    pub fn input(&mut self) -> &mut Option<PipeWriter> {
+    pub fn input(&mut self) -> &mut Option<FdSink> {
         &mut self.input
     }
 }
@@ -202,19 +202,19 @@ pub fn set_winsize<T>(io: &T, ws: &libc::winsize) -> io::Result<()> where T: AsR
  *
  */
 
-pub struct PipeReader {
+pub struct FdStream {
     ptyout: PtyOut,
 }
 
-impl PipeReader {
-    pub fn new(ptyout: PtyOut) -> PipeReader {
-        PipeReader {
+impl FdStream {
+    pub fn new(ptyout: PtyOut) -> FdStream {
+        FdStream {
             ptyout: ptyout,
         }
     }
 }
 
-impl Stream for PipeReader {
+impl Stream for FdStream {
     type Item = Vec<u8>;
     type Error = io::Error;
 
@@ -240,21 +240,21 @@ impl Stream for PipeReader {
     }
 }
 
-pub struct PipeWriter {
+pub struct FdSink {
     pub ptyin: PtyIn,
     buf: Vec<u8>,
 }
 
-impl PipeWriter {
-    pub fn new(ptyin: PtyIn) -> PipeWriter {
-        PipeWriter {
+impl FdSink {
+    pub fn new(ptyin: PtyIn) -> FdSink {
+        FdSink {
             ptyin: ptyin,
             buf: Vec::new(),
         }
     }
 }
 
-impl Sink for PipeWriter {
+impl Sink for FdSink {
     type SinkItem = Vec<u8>;
     type SinkError = io::Error;
 
