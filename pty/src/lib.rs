@@ -7,12 +7,10 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::process::CommandExt;
-use std::os::unix::io::{RawFd, IntoRawFd, AsRawFd, FromRawFd};
+use std::os::unix::io::{RawFd, AsRawFd, FromRawFd};
 use std::ptr;
 use std::process;
 
-//use libc::{winsize, c_int, pid_t, WNOHANG, WIFEXITED, SIGCHLD, TIOCSCTTY, O_NONBLOCK, F_SETFL, F_GETFL};
-//use libc::{winsize, TIOCSCTTY, TIOCGWINSZ, TIOCSWINSZ, O_NONBLOCK, F_SETFL, F_GETFL};
 use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
 use mio::unix::EventedFd;
@@ -23,26 +21,33 @@ use tokio_core::reactor::{Handle, PollEvented};
 mod tests {
     use futures::{Future, Stream, Sink};
     use tokio_core::reactor;
+
+    const stimuli: [u8; 4] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8];
+
     #[test]
     fn it_works() {
-        let mut builder = ::Command::new("python");
-        //builder.arg("Cargo.toml");
-        let child = builder.spawn().unwrap();
-        println!("TEST");
-
         let mut core = reactor::Core::new().unwrap();
+        let handle = core.handle();
 
-        let output = child.output().for_each(|x| {
-            print!("{}", String::from_utf8(x).unwrap());
+        let mut pty = ::Pty::new(&handle);
+        pty.spawn("cat").unwrap();
+
+        let mut stim = Vec::new();
+        for c in stimuli.iter() {
+            stim.push(c.clone());
+        }
+
+        let output = pty.output().take().unwrap().for_each(|x| {
+            print!("OUT {}", String::from_utf8(x).unwrap());
             //println!("{:?}", x);
             Ok(())
         });
 
-        let input = child.input()
-            .send(vec!['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8, '\x04' as u8])
+        let input = pty.input().take().unwrap()
+            .send(stim)
             .and_then(|f| f.flush());
             //.map(|_| child.input_close());
-            //.and_then(|f| {child.input_close(); Box::new(Future::new<FdSink::Item, std::io::Error>()) });
+            //.and_then(|f| {child.input_close(); Box::new(Future::new<PtySink::Item, std::io::Error>()) });
 
         core.run(input.join(output)).unwrap();
     }
@@ -65,89 +70,105 @@ impl From<u16> for Columns {
     }
 }
 
+enum PtyInner {
+    Child(process::Child),
+    ExitStatus(process::ExitStatus),
+    NeverSpawned,
+}
+
 pub struct Pty {
-    builder: process::Command,
-    io: Io,
-    input: Option<FdSink>,
-    output: Option<FdStream>,
+    child: PtyInner,
+    master: RawFd,
+    slave: RawFd,
+    input: Option<PtySink>,
+    output: Option<PtyStream>,
 }
 
 impl Pty {
-    pub fn new<S>(program: S, handle: &Handle) -> Pty
-        where S: AsRef<OsStr>
+    pub fn new(handle: &Handle) -> Pty
     {
         let (master, slave) = openpty(24u16, 80u16);
-        set_nonblock(master).unwrap();
-
-        let mut builder = process::Command::new(program);
-        builder.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
-               .stdout(unsafe { process::Stdio::from_raw_fd(slave) })
-               .stderr(unsafe { process::Stdio::from_raw_fd(slave) })
-               .before_exec(move || {
-                   // Make this process leader of new session
-                   set_sessionid()?;
-                   // Set the controlling terminal to the slave side of the pty
-                   set_controlling_terminal(slave)?;
-                   // Slave and master are not needed anymore
-                   unsafe {
-                       cvt(libc::close(slave))?;
-                       cvt(libc::close(master))?;
-                   }
-                   // Reset all signal handlers to default
-                   unsafe {
-                       libc::signal(libc::SIGCHLD, libc::SIG_DFL);
-                       libc::signal(libc::SIGHUP, libc::SIG_DFL);
-                       libc::signal(libc::SIGINT, libc::SIG_DFL);
-                       libc::signal(libc::SIGQUIT, libc::SIG_DFL);
-                       libc::signal(libc::SIGTERM, libc::SIG_DFL);
-                       libc::signal(libc::SIGALRM, libc::SIG_DFL);
-                   }
-                   Ok(())
-               });
+        //set_nonblock(master).unwrap();
         unsafe {
             // If child dies, reap it
             libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
-        let io = stdio(Some(unsafe{ Io::from_raw_fd(libc::dup(master))}), handle);
-        let output = FdStream::new(io.unwrap().unwrap());
+        let io = stdio(Some(unsafe{ File::from_raw_fd(libc::dup(master))}), handle);
+        let output = PtyStream::new(io.unwrap().unwrap());
 
-        let io = stdio(Some(unsafe{ Io::from_raw_fd(master)}), handle);
-        let input = FdSink::new(io.expect("Error creating io").expect("Got None instead of Some"));
+        let io = stdio(Some(unsafe{ File::from_raw_fd(master)}), handle);
+        let input = PtySink::new(io.expect("Error creating io").expect("Got None instead of Some"));
 
         Pty {
-            builder: builder,
-            io: unsafe {Io::from_raw_fd(master)},
+            child: PtyInner::NeverSpawned,
+            master: master as RawFd,
+            slave: slave as RawFd,
             input: Some(input),
             output: Some(output),
         }
     }
 
-    pub fn arg<S>(&mut self, arg: S) -> &mut Pty
+    //pub fn arg<S>(&mut self, arg: S) -> &mut Pty
+    //    where S: AsRef<OsStr>
+    //{
+    //    self.builder.arg(arg);
+    //    self
+    //}
+
+    pub fn spawn<S>(&mut self, program: S) -> io::Result<()>
         where S: AsRef<OsStr>
     {
-        self.builder.arg(arg);
-        self
-    }
-
-    pub fn spawn(&mut self) -> io::Result<process::Child> {
-        self.builder.spawn()
+        match self.child {
+            PtyInner::Child(_) => return Err(io::Error::new(io::ErrorKind::Other, "Child is already spawned")),
+            _ => {
+                let mut builder = process::Command::new(program);
+                let (master, slave) = (self.master, self.slave);
+                builder.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
+                    .stdout(unsafe { process::Stdio::from_raw_fd(slave) })
+                    .stderr(unsafe { process::Stdio::from_raw_fd(slave) })
+                    .before_exec(move || {
+                        // Make this process leader of new session
+                        set_sessionid()?;
+                        // Set the controlling terminal to the slave side of the pty
+                        set_controlling_terminal(slave)?;
+                        // Slave and master are not needed anymore
+                        unsafe {
+                            cvt(libc::close(slave))?;
+                            cvt(libc::close(master))?;
+                        }
+                        // Reset all signal handlers to default
+                        unsafe {
+                            libc::signal(libc::SIGCHLD, libc::SIG_DFL);
+                            libc::signal(libc::SIGHUP, libc::SIG_DFL);
+                            libc::signal(libc::SIGINT, libc::SIG_DFL);
+                            libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+                            libc::signal(libc::SIGALRM, libc::SIG_DFL);
+                        }
+                        Ok(())
+                    });
+                let child = builder.spawn()?;
+                self.child = PtyInner::Child(child);
+                Ok(())
+            }
+        }
     }
 
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
         println!("set {:?} {:?}", rows, columns);
-        let mut ws = get_winsize(&self.io).unwrap();
+        let mut ws = get_winsize(self.master).unwrap();
         let Rows(ws_row) = rows;
         let Columns(ws_col) = columns;
         ws.ws_row = ws_row;
         ws.ws_col = ws_col;
-        set_winsize(&self.io, &ws).expect("Failed to set window size");
+        set_winsize(self.master, &ws).expect("Failed to set window size");
     }
 
-    pub fn output(&mut self) -> &mut Option<FdStream> {
+    pub fn output(&mut self) -> &mut Option<PtyStream> {
         &mut self.output
     }
 
-    pub fn input(&mut self) -> &mut Option<FdSink> {
+    pub fn input(&mut self) -> &mut Option<PtySink> {
         &mut self.input
     }
 }
@@ -176,23 +197,22 @@ fn openpty(rows: u16, cols: u16) -> (RawFd, RawFd) {
     (master, slave)
 }
 
-pub fn get_winsize<T>(io: &T) -> io::Result<libc::winsize> where T: AsRawFd {
+pub fn get_winsize(fd: RawFd) -> io::Result<libc::winsize> {
     let mut ws = libc::winsize {
         ws_row: 0,
         ws_col: 0,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
-    match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCGWINSZ, &mut ws) } {
-        0 => Ok(ws),
-        _ => Err(io::Error::last_os_error()),
+    unsafe {
+        cvt(libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws))?;
+        Ok((ws))
     }
 }
 
-pub fn set_winsize<T>(io: &T, ws: &libc::winsize) -> io::Result<()> where T: AsRawFd {
-    match unsafe { libc::ioctl(io.as_raw_fd(), libc::TIOCSWINSZ, ws) } {
-        0 => Ok(()),
-        _ => Err(io::Error::last_os_error()),
+pub fn set_winsize(fd: RawFd, ws: &libc::winsize) -> io::Result<()> {
+    unsafe {
+        cvt(libc::ioctl(fd, libc::TIOCSWINSZ, ws)).map(|_| ())
     }
 }
 
@@ -202,19 +222,19 @@ pub fn set_winsize<T>(io: &T, ws: &libc::winsize) -> io::Result<()> where T: AsR
  *
  */
 
-pub struct FdStream {
-    ptyout: PtyOut,
+pub struct PtyStream {
+    ptyout: PtyIo,
 }
 
-impl FdStream {
-    pub fn new(ptyout: PtyOut) -> FdStream {
-        FdStream {
+impl PtyStream {
+    pub fn new(ptyout: PtyIo) -> PtyStream {
+        PtyStream {
             ptyout: ptyout,
         }
     }
 }
 
-impl Stream for FdStream {
+impl Stream for PtyStream {
     type Item = Vec<u8>;
     type Error = io::Error;
 
@@ -240,21 +260,21 @@ impl Stream for FdStream {
     }
 }
 
-pub struct FdSink {
-    pub ptyin: PtyIn,
+pub struct PtySink {
+    pub ptyin: PtyIo,
     buf: Vec<u8>,
 }
 
-impl FdSink {
-    pub fn new(ptyin: PtyIn) -> FdSink {
-        FdSink {
+impl PtySink {
+    pub fn new(ptyin: PtyIo) -> PtySink {
+        PtySink {
             ptyin: ptyin,
             buf: Vec::new(),
         }
     }
 }
 
-impl Sink for FdSink {
+impl Sink for PtySink {
     type SinkItem = Vec<u8>;
     type SinkError = io::Error;
 
@@ -343,73 +363,6 @@ pub fn set_cloexec(fd: libc::c_int) -> io::Result<()> {
     }
 }
 
-/*
- *
- * ===== Basic IO type =====
- *
- */
-
-#[derive(Debug)]
-pub struct Io {
-    fd: File,
-}
-
-impl Io {
-    pub fn try_clone(&self) -> io::Result<Io> {
-        Ok(Io { fd: try!(self.fd.try_clone()) })
-    }
-}
-
-impl FromRawFd for Io {
-    unsafe fn from_raw_fd(fd: RawFd) -> Io {
-        Io { fd: File::from_raw_fd(fd) }
-    }
-}
-
-impl IntoRawFd for Io {
-    fn into_raw_fd(self) -> RawFd {
-        self.fd.into_raw_fd()
-    }
-}
-
-impl AsRawFd for Io {
-    fn as_raw_fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
-    }
-}
-
-impl Read for Io {
-    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
-        (&self.fd).read(dst)
-    }
-}
-
-impl<'a> Read for &'a Io {
-    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
-        (&self.fd).read(dst)
-    }
-}
-
-impl Write for Io {
-    fn write(&mut self, src: &[u8]) -> io::Result<usize> {
-        (&self.fd).write(src)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        (&self.fd).flush()
-    }
-}
-
-impl<'a> Write for &'a Io {
-    fn write(&mut self, src: &[u8]) -> io::Result<usize> {
-        (&self.fd).write(src)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        (&self.fd).flush()
-    }
-}
-
 trait IsMinusOne {
     fn is_minus_one(&self) -> bool;
 }
@@ -478,9 +431,9 @@ impl<T> Evented for Fd<T> where T: AsRawFd {
         EventedFd(&self.0.as_raw_fd()).deregister(poll)
     }
 }
-type PtyIn = PollEvented<Fd<Io>>;
-type PtyOut = PollEvented<Fd<Io>>;
+type PtyIo = PollEvented<Fd<File>>;
 
+// The Fd in T has to be unique so that tokio can keep track of everything..
 fn stdio<T>(option: Option<T>, handle: &Handle)
             -> io::Result<Option<PollEvented<Fd<T>>>>
     where T: AsRawFd
@@ -492,6 +445,6 @@ fn stdio<T>(option: Option<T>, handle: &Handle)
 
     // Set the fd to nonblocking before we pass it to the event loop
     set_nonblock(io.as_raw_fd())?;
-    let io = try!(PollEvented::new(Fd(io), handle));
+    let io = PollEvented::new(Fd(io), handle)?;
     Ok(Some(io))
 }
