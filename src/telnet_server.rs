@@ -9,6 +9,7 @@ use tokio_core;
 use tokio_core::net::{TcpListener};
 use tokio_core::io::Io;
 use futures::{self, Stream, Sink, Future};
+use futures::sync::mpsc;
 use std::io;
 use std::io::Write;
 
@@ -17,7 +18,7 @@ use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
 
-use pty::PipeWriter;
+use pty::PtySink;
 
 use child;
 
@@ -37,75 +38,76 @@ use child;
 pub struct TelnetServer {
     process: Rc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
-    child_writer: Rc<RefCell<PipeWriter>>,
+    //child_writer: Rc<RefCell<PtySink>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
+    tx: mpsc::Sender<(SocketAddr, TelnetIn)>,
+    rx: mpsc::Receiver<(SocketAddr, TelnetIn)>,
 }
 
 impl TelnetServer {
     pub fn new(history: Rc<RefCell<History>>, process: Rc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
-        let child_writer = process.borrow_mut().pty.input().take().unwrap();
+        let (tx, rx) = mpsc::channel(2048);
+        //let child_writer = process.borrow_mut().pty.input().take().unwrap();
         TelnetServer {
             process: process,
             history: history,
-            child_writer: Rc::new(RefCell::new(child_writer)),
+            //child_writer: Rc::new(RefCell::new(child_writer)),
             noinfo: noinfo,
             listeners: Vec::new(),
+            tx: tx,
+            rx: rx,
         }
     }
 
     pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
-        //let process_writer = Rc::new(RefCell::new(*self.process.borrow().pty.input()));
-        let process_writer = self.child_writer.clone();
         let history = self.history.clone();
-        let process_clone = self.process.clone();
-        //let history_reader = Rc::new(RefCell::new(self.history.borrow().reader()));
-        let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
+        let tx = self.tx.clone();
+        let sserver = listener.incoming().and_then(move |(socket, peer_addr)| {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
 
-            let process_writer = process_writer.clone();
-            let process_clone = process_clone.clone();
-            //let history_clone = history.clone();
-
-            let responses = reader.for_each(move |msg| {
-                let pw_clone = process_writer.clone();
-                let process_clone = process_clone.clone();
-                //let history = history_clone.clone();
-                //self.send_process(msg)
-                match msg {
-                    TelnetIn::Text {text} => {
-                        //pw_clone.borrow_mut().send(text);
-                        //TODO(nc): this is an async write.. might fail..
-                        pw_clone.borrow_mut().ptyin.write(text.as_slice()).unwrap();
-                        //println!("TEXT: {:?}", text);
-                    },
-                    TelnetIn::NAWS {rows, columns} => {
-                        //self.process.pty.resize(rows, columns);
-                        //println!("resize to {:?} {:?}", rows, columns);
-                        process_clone.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
-                    },
-                    TelnetIn::Carriage => println!("CR"),
-                }
-                Ok(())
-            }).map_err(|_| ());
+            let tx = tx.clone();
+            let responses = tx.send_all(reader.map(move |x| (peer_addr, x)).map_err(|_| unimplemented!())).map_err(|_|());
 
             let messages = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(messages)
                 .then(|_| Ok(()));
-            //let server = writer.send("hej\r\n".as_bytes().to_vec()).then(|_| Ok(()));
 
             let join = server.join(responses);
             handle.spawn(join.map(|_| ()));
+            Ok(peer_addr)
+        }).for_each(|peer_addr| {
+            println!("lost connection {:?}", peer_addr);
             Ok(())
         });
         self.listeners.push(Box::new(sserver))
     }
 
-    pub fn server(self) -> Box<Future<Item=(), Error=io::Error>>{
-        let server = futures::future::join_all(self.listeners).map(|_|());
-        return Box::new(server);
+    pub fn server(self) -> Box<Future<Item=(), Error=()>>{
+        let process = self.process.clone();
+        let child_writer = process.borrow_mut().pty.input().take().unwrap();
+        //let child_writer = self.child_writer.take();
+        let x = self.rx.for_each(move |(peer_addr, x)| {
+            match x {
+                TelnetIn::Text {text} => {
+                    println!("hej {:?}", text);
+                    return Ok(child_writer.send(text).map(|_| Ok(())))
+                    //return Ok(child_writer.send(text).and_then(|x| {
+                    //    x.flush();
+                    //    Ok(())
+                    //}));
+                },
+                TelnetIn::NAWS {rows, columns} => {
+                    process.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
+                },
+                TelnetIn::Carriage => println!("CR"),
+            }
+            Ok(())
+        });
+        let server = futures::future::join_all(self.listeners).map(|_|()).map_err(|_|());
+        return Box::new(x.join(server).map(|_|()));
     }
 
     //pub fn recv_process(&self) -> Box<Stream<Item=Vec<u8>, Error=io::Error>> {

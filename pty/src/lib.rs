@@ -21,8 +21,9 @@ use tokio_core::reactor::{Handle, PollEvented};
 mod tests {
     use futures::{Future, Stream, Sink};
     use tokio_core::reactor;
+    use std::process;
 
-    const stimuli: [u8; 4] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8];
+    const STIMULI: [u8; 4] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8];
 
     #[test]
     fn it_works() {
@@ -30,10 +31,10 @@ mod tests {
         let handle = core.handle();
 
         let mut pty = ::Pty::new(&handle);
-        pty.spawn("cat").unwrap();
+        pty.spawn(process::Command::new("cat")).unwrap();
 
         let mut stim = Vec::new();
-        for c in stimuli.iter() {
+        for c in STIMULI.iter() {
             stim.push(c.clone());
         }
 
@@ -108,22 +109,13 @@ impl Pty {
         }
     }
 
-    //pub fn arg<S>(&mut self, arg: S) -> &mut Pty
-    //    where S: AsRef<OsStr>
-    //{
-    //    self.builder.arg(arg);
-    //    self
-    //}
-
-    pub fn spawn<S>(&mut self, program: S) -> io::Result<()>
-        where S: AsRef<OsStr>
+    pub fn spawn(&mut self, mut command: process::Command) -> io::Result<()>
     {
         match self.child {
             PtyInner::Child(_) => return Err(io::Error::new(io::ErrorKind::Other, "Child is already spawned")),
             _ => {
-                let mut builder = process::Command::new(program);
                 let (master, slave) = (self.master, self.slave);
-                builder.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
+                command.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
                     .stdout(unsafe { process::Stdio::from_raw_fd(slave) })
                     .stderr(unsafe { process::Stdio::from_raw_fd(slave) })
                     .before_exec(move || {
@@ -147,7 +139,7 @@ impl Pty {
                         }
                         Ok(())
                     });
-                let child = builder.spawn()?;
+                let child = command.spawn()?;
                 self.child = PtyInner::Child(child);
                 Ok(())
             }

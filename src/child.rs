@@ -30,7 +30,7 @@ pub struct Process {
     foreground: bool,
     //ptyserver: TtyServer,
     pub pty: pty::Pty,
-    cid: Option<u32>,
+    //cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
     window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>
     //stdin: PipeWriter,
@@ -39,13 +39,8 @@ pub struct Process {
 
 impl Process {
     pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: &Handle) -> Process {
-        let mut pty = pty::Pty::new(&args[0], handle);
+        let pty = pty::Pty::new(handle);
         //pty.register(handle);
-        if args.len() > 1 {
-            for arg in args[1..].iter() {
-                pty.arg(arg);
-            }
-        }
         Process {
             args: args,
             history: history,
@@ -53,7 +48,7 @@ impl Process {
             foreground: foreground,
             //ptyserver: ptyserver,
             pty: pty,
-            cid: None,
+            //cid: None,
             exit_status: None,
             window_sizes: HashMap::new(),
             //stdin: stdin,
@@ -62,14 +57,22 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
-        if self.cid.is_some() {
-            return Err(ProcessError::ProcessAlreadySpawned);
+        //if self.cid.is_some() {
+        //    return Err(ProcessError::ProcessAlreadySpawned);
+        //}
+
+        let mut command = process::Command::new(&self.args[0]);
+
+        if self.args.len() > 1 {
+            for arg in self.args[1..].iter() {
+                command.arg(arg);
+            }
         }
 
-        match self.pty.spawn() {
+        match self.pty.spawn(command) {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
-            Ok(p) => {
-                self.cid = Some(p.id());
+            Ok(_) => {
+                //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
                 //    format!("Successfully spawned {}!\r\n", self.args[0]));
