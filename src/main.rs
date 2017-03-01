@@ -59,6 +59,10 @@ fn main() {
 
     let options = Options::parse_args();
 
+    if options.binds.is_none() && options.logbinds.is_none() {
+        panic!("No network binds!");
+    }
+
     ::std::thread::spawn(move || run(options, sdone));
 
     chan_select! {
@@ -94,41 +98,42 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     let child = Rc::new(RefCell::new(child));
 
     let hw = HistoryWriter::new(history.clone());
-    let proc_output = hw.send_all(child.borrow_mut().pty.output().take().unwrap())
-        .then(|_| Ok(()));
+    let cw = {
+        // limit the borrow of child to this scope
+        let mut child = child.borrow_mut();
+        child.pty.output().take().unwrap()
+    };
+    let proc_output = hw.send_all(cw)
+        .then(|r| {
+            let child = child.clone();
+            match r {
+                Err(e) => {
+                    println!("relaucnh?");
+                    let mut child = child.borrow_mut();
+                    child.wait();
+                    child.spawn();
+                },
+                _ => ()
+            }
+            Ok(())
+        });
 
-    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child, options.noinfo);
+    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.noinfo);
     if let Some(binds) = options.binds {
         for bind in binds {
-            telnet_server.bind(&bind, core.handle());
+            telnet_server.bind(&bind, core.handle(), false);
         }
-    } else {
-        panic!("No binds!");
+    }
+    if let Some(binds) = options.logbinds {
+        for bind in binds {
+            telnet_server.bind(&bind, core.handle(), true);
+        }
     }
 
     let join = telnet_server.server().join(proc_output).map(|_| ());
 
     core.run(join).unwrap()
-
-//    let poll = Poll::new().unwrap();
 //
-//    if options.autostart {
-//        child_select(&poll, &mut child);
-//    }
-//
-//    if let Some(ref binds) = options.logbinds {
-//        for addr in binds {
-//            telnet_server.add_bind(&poll, *addr, BindKind::Log);
-//            println!("Listening on Port {}", addr);
-//        }
-//    }
-//
-//    if let Some(ref binds) = options.binds {
-//        for addr in binds {
-//            telnet_server.add_bind(&poll, *addr, BindKind::Control);
-//            println!("Listening on Port {}", addr);
-//        }
-//    }
 
 //    let mut prompt_input:Option<PipeReader> = None;
 //    if options.interactive {

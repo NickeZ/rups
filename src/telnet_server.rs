@@ -1,24 +1,16 @@
-//use std::collections::{HashMap};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::net::{SocketAddr};
-//use std::error::{Error};
-//use mio::*;
-//use mio::tcp::{TcpListener};
-use tokio_core;
+use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
 use tokio_core::io::Io;
 use futures::{self, Stream, Sink, Future};
 use futures::sync::mpsc;
 use std::io;
-use std::io::Write;
 
-//use telnet_client::TelnetClient;
 use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
-
-use pty::PtySink;
 
 use child;
 
@@ -26,13 +18,6 @@ use child;
 //pub enum BindKind {
 //    Control,
 //    Log,
-//}
-
-//pub fn process(socket: TcpStream) -> Box<Future<Item=(), Error=()>> {
-//    let fut = tokio_core::io::write_all(socket, b"hej!\r\n")
-//        .map(|x| ())
-//        .map_err(|e| ());
-//    Box::new(fut)
 //}
 
 pub struct TelnetServer {
@@ -58,29 +43,33 @@ impl TelnetServer {
         }
     }
 
-    pub fn bind(&mut self, addr: &SocketAddr, handle: tokio_core::reactor::Handle) {
+    pub fn bind(&mut self, addr: &SocketAddr, handle: reactor::Handle, read_only: bool) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
+        println!("Listening on Port {}", addr);
         let history = self.history.clone();
         let tx = self.tx.clone();
-        let sserver = listener.incoming().and_then(move |(socket, peer_addr)| {
+        let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
+            println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
 
-            // Create a new sender endpoint to the channel
-            let tx = tx.clone();
-            let responses = tx.send_all(reader.map(move |x| (peer_addr, x))
-                .map_err(|_| unimplemented!()))
-                .map_err(|_|());
-
-            let messages = HistoryReader::new(history.clone());
+            // Send all outputs from the process to the telnet client
+            let from_process = HistoryReader::new(history.clone());
             let server = writer
-                .send_all(messages)
+                .send_all(from_process)
                 .then(|_| Ok(()));
 
-            let join = server.join(responses);
-            handle.spawn(join.map(|_| ()));
-            Ok(peer_addr)
-        }).for_each(|peer_addr| {
-            println!("lost connection {:?}", peer_addr);
+            if !read_only {
+                // Create a new sender endpoint where this telnet client can
+                // send all its outputs
+                let tx = tx.clone();
+                let responses = tx.send_all(
+                    reader.map(move |x| (peer_addr, x)).map_err(|_| unimplemented!())
+                ).map_err(|_| ());
+                let server = server.join(responses).map(|_| ());
+                handle.spawn(server);
+                return Ok(())
+            }
+            handle.spawn(server);
             Ok(())
         });
         self.listeners.push(Box::new(sserver))
@@ -92,7 +81,6 @@ impl TelnetServer {
         let x = self.rx.filter_map(move |(peer_addr, x)| {
             match x {
                 TelnetIn::Text {text} => {
-                    println!("hej {:?}", text);
                     return Some(text)
                 },
                 TelnetIn::NAWS {rows, columns} => {

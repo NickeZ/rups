@@ -10,6 +10,8 @@ use std::os::unix::process::CommandExt;
 use std::os::unix::io::{RawFd, AsRawFd, FromRawFd};
 use std::ptr;
 use std::process;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
@@ -81,8 +83,8 @@ pub struct Pty {
     child: PtyInner,
     master: RawFd,
     slave: RawFd,
-    input: Option<PtySink>,
-    output: Option<PtyStream>,
+    //input: Option<PtySink>,
+    //output: Option<PtyStream>,
 }
 
 impl Pty {
@@ -92,20 +94,20 @@ impl Pty {
         //set_nonblock(master).unwrap();
         unsafe {
             // If child dies, reap it
-            libc::signal(libc::SIGCHLD, libc::SIG_IGN);
+            //libc::signal(libc::SIGCHLD, libc::SIG_IGN);
         }
-        let io = stdio(Some(unsafe{ File::from_raw_fd(libc::dup(master))}), handle);
-        let output = PtyStream::new(io.unwrap().unwrap());
+        //let io = stdio(Some(unsafe{ File::from_raw_fd(libc::dup(master))}), handle);
+        //let output = PtyStream::new(io.unwrap().unwrap());
 
-        let io = stdio(Some(unsafe{ File::from_raw_fd(master)}), handle);
-        let input = PtySink::new(io.expect("Error creating io").expect("Got None instead of Some"));
+        //let io = stdio(Some(unsafe{ File::from_raw_fd(master)}), handle);
+        //let input = PtySink::new(io.expect("Error creating io").expect("Got None instead of Some"));
 
         Pty {
             child: PtyInner::NeverSpawned,
             master: master as RawFd,
             slave: slave as RawFd,
-            input: Some(input),
-            output: Some(output),
+            //input: Some(input),
+            //output: Some(output),
         }
     }
 
@@ -114,7 +116,15 @@ impl Pty {
         match self.child {
             PtyInner::Child(_) => return Err(io::Error::new(io::ErrorKind::Other, "Child is already spawned")),
             _ => {
+                println!("trying to launch");
                 let (master, slave) = (self.master, self.slave);
+                let slave = unsafe { libc::dup(slave) };
+                //let (master, slave) = openpty(24u16, 80u16);
+                //self.master = master;
+                //self.slave = slave;
+                // Give the child process a duplicated fd because it will close the stdin fd when
+                // dying...
+                //let slave_dup = unsafe { libc::dup(slave) };
                 command.stdin(unsafe { process::Stdio::from_raw_fd(slave) })
                     .stdout(unsafe { process::Stdio::from_raw_fd(slave) })
                     .stderr(unsafe { process::Stdio::from_raw_fd(slave) })
@@ -126,6 +136,7 @@ impl Pty {
                         // Slave and master are not needed anymore
                         unsafe {
                             cvt(libc::close(slave))?;
+                            //cvt(libc::close(slave_dup))?;
                             cvt(libc::close(master))?;
                         }
                         // Reset all signal handlers to default
@@ -139,11 +150,24 @@ impl Pty {
                         }
                         Ok(())
                     });
-                let child = command.spawn()?;
+                let child = command.spawn().expect("Faily failed");
                 self.child = PtyInner::Child(child);
                 Ok(())
             }
         }
+    }
+
+    pub fn wait(&mut self) {
+        let res;
+        match self.child {
+            PtyInner::Child(ref mut child) => {
+                let status = child.wait().expect("Wait failed");
+                res = PtyInner::ExitStatus(status);
+                //res = PtyInner::NeverSpawned;
+            },
+            _ => res = PtyInner::NeverSpawned,
+        }
+        self.child = res;
     }
 
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
@@ -156,13 +180,13 @@ impl Pty {
         set_winsize(self.master, &ws).expect("Failed to set window size");
     }
 
-    pub fn output(&mut self) -> &mut Option<PtyStream> {
-        &mut self.output
-    }
+    //pub fn output(&mut self) -> &mut Option<PtyStream> {
+    //    &mut self.output
+    //}
 
-    pub fn input(&mut self) -> &mut Option<PtySink> {
-        &mut self.input
-    }
+    //pub fn input(&mut self) -> &mut Option<PtySink> {
+    //    &mut self.input
+    //}
 }
 
 /// Get raw fds for master/slave ends of a new pty
@@ -215,13 +239,13 @@ pub fn set_winsize(fd: RawFd, ws: &libc::winsize) -> io::Result<()> {
  */
 
 pub struct PtyStream {
-    ptyout: PtyIo,
+    pty: Rc<RefCell<Pty>>,
 }
 
 impl PtyStream {
-    pub fn new(ptyout: PtyIo) -> PtyStream {
+    pub fn new(pty: Rc<RefCell<Pty>>) -> PtyStream {
         PtyStream {
-            ptyout: ptyout,
+            pty: pty,
         }
     }
 }
@@ -232,7 +256,7 @@ impl Stream for PtyStream {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
         let mut buf = [0 as u8;2048];
-        match self.ptyout.read(&mut buf) {
+        match self.pty.borrow_mut().read(&mut buf) {
             Ok(len) => {
                 let mut vec = Vec::new();
                 for i in 0..len {
@@ -242,10 +266,10 @@ impl Stream for PtyStream {
                 return Ok(Async::Ready(Some(vec)));
             },
             Err(e) => {
-                //println!("{:?}", e);
                 if e.kind() == io::ErrorKind::WouldBlock {
                     return Ok(Async::NotReady);
                 }
+                println!("{:?}", e);
                 return Err(e);
             },
         }
@@ -286,6 +310,7 @@ impl Sink for PtySink {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         return Ok(AsyncSink::NotReady(item));
                     }
+                    println!("{:?}", e);
                     return Err(e);
                 }
             }
@@ -320,6 +345,7 @@ impl Sink for PtySink {
                 Err(e) => {
                     //self.buf.append(copy.drain(..).collect().iter());
                     if e.kind() != io::ErrorKind::WouldBlock {
+                        println!("{:?}", e);
                         res = Err(e);
                     }
                 },
