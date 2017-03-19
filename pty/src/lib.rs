@@ -3,10 +3,9 @@ extern crate libc;
 extern crate mio;
 extern crate tokio_core;
 
-use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::process::CommandExt;
-use std::os::unix::io::{RawFd, AsRawFd, FromRawFd};
+use std::os::unix::io::{RawFd, FromRawFd};
 use std::ptr;
 use std::process;
 
@@ -21,7 +20,7 @@ mod tests {
     use tokio_core::reactor;
     use std::process;
 
-    const STIMULI: [u8; 4] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8];
+    const STIMULI: [u8; 5] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8, '\x04' as u8];
 
     #[test]
     fn it_works() {
@@ -38,15 +37,12 @@ mod tests {
 
         let output = child.output().take().unwrap().for_each(|x| {
             print!("OUT {}", String::from_utf8(x).unwrap());
-            //println!("{:?}", x);
             Ok(())
         });
 
         let input = child.input().take().unwrap()
             .send(stim)
             .and_then(|f| f.flush());
-            //.map(|_| child.input_close());
-            //.and_then(|f| {child.input_close(); Box::new(Future::new<PtySink::Item, std::io::Error>()) });
 
         core.run(input.join(output)).unwrap();
     }
@@ -71,7 +67,7 @@ impl From<u16> for Columns {
 
 pub struct Child {
     inner: process::Child,
-    master: File,
+    master: (RawFd, RawFd),
     input: Option<PtySink>,
     output: Option<PtyStream>,
 }
@@ -129,28 +125,22 @@ impl Pty {
                 Ok(())
             });
         let child = command.spawn().expect("Faily failed");
-        unsafe { libc::close(slave) };
+        // TODO(nc): If I close the slave fd master2 becomes a "bad file descriptor"
+        //cvt(unsafe { libc::close(slave) }).expect("failed to close pts");
 
-        let master = unsafe {File::from_raw_fd(master) };
-        let mut master_out = master.try_clone().expect("Failed to dup fd");
-        let mut master_in = master.try_clone().expect("Failed to dup fd");
+        let master2 = cvt(unsafe {libc::dup(master)}).unwrap();
 
-        master_out.write("test\ntest2\n".as_bytes()).expect("Failed towrite");
-        let mut buf = [0u8; 64];
-        let len = master_in.read(&mut buf).expect("failed to read");
-        println!("{:?}", String::from_utf8(buf[0..len].to_vec()));
+        //println!("{:?} {:?}", master, master2);
 
-        println!("{:?} {:?} {:?}", master, master_in, master_out);
-
-        let io = stdio(master_out, handle);
+        let io = stdio(master, handle);
         let output = PtyStream::new(io.expect("Failed to create EventedFd for output").unwrap());
 
-        let io = stdio(master_in, handle);
+        let io = stdio(master2, handle);
         let input = PtySink::new(io.expect("Failed to create EventedFd for input").unwrap());
 
         let child = Child {
             inner: child,
-            master: master,
+            master: (master, master2),
             input: Some(input),
             output: Some(output),
         };
@@ -165,12 +155,12 @@ impl Child {
 
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
         println!("set {:?} {:?}", rows, columns);
-        let mut ws = get_winsize(self.master.as_raw_fd()).unwrap();
+        let mut ws = get_winsize(self.master.0).unwrap();
         let Rows(ws_row) = rows;
         let Columns(ws_col) = columns;
         ws.ws_row = ws_row;
         ws.ws_col = ws_col;
-        set_winsize(self.master.as_raw_fd(), &ws).expect("Failed to set window size");
+        set_winsize(self.master.0, &ws).expect("Failed to set window size");
     }
 
     pub fn output(&mut self) -> &mut Option<PtyStream> {
@@ -294,6 +284,7 @@ impl Sink for PtySink {
             return Ok(AsyncSink::Ready);
         }
         {
+            println!("{:?}", self.ptyin);
             match self.ptyin.write(item.as_slice()) {
                 Ok(len) => {
                     std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
@@ -395,32 +386,43 @@ fn cvt<T: IsMinusOne>(t: T) -> ::io::Result<T> {
     }
 }
 
-pub struct Fd<T>(T);
+#[derive(Debug)]
+pub struct Fd(RawFd);
 
-impl<T: io::Read> io::Read for Fd<T> {
+impl io::Read for Fd {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        self.0.read(bytes)
+        let len = cvt(unsafe {
+            libc::read(self.0,
+                       bytes.as_ptr() as *mut libc::c_void,
+                       bytes.len())
+        })?;
+        Ok(len as usize)
     }
 }
 
-impl<T: io::Write> io::Write for Fd<T> {
+impl io::Write for Fd {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.write(bytes)
+        let len = cvt(unsafe {
+            libc::write(self.0,
+                        bytes.as_ptr() as *mut libc::c_void,
+                        bytes.len())
+        })?;
+        Ok(len as usize)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
+        Ok(())
     }
 }
 
-impl<T> Evented for Fd<T> where T: AsRawFd {
+impl Evented for Fd {
     fn register(&self,
                 poll: &mio::Poll,
                 token: Token,
                 interest: Ready,
                 opts: PollOpt)
                 -> io::Result<()> {
-        EventedFd(&self.0.as_raw_fd()).register(poll,
+        EventedFd(&self.0).register(poll,
                                                 token,
                                                 interest | UnixReady::hup(),
                                                 opts)
@@ -432,27 +434,26 @@ impl<T> Evented for Fd<T> where T: AsRawFd {
                   interest: Ready,
                   opts: PollOpt)
                   -> io::Result<()> {
-        EventedFd(&self.0.as_raw_fd()).reregister(poll,
+        EventedFd(&self.0).reregister(poll,
                                                   token,
                                                   interest | UnixReady::hup(),
                                                   opts)
     }
 
     fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
-        EventedFd(&self.0.as_raw_fd()).deregister(poll)
+        EventedFd(&self.0).deregister(poll)
     }
 }
 
-type PtyIo = PollEvented<Fd<File>>;
+type PtyIo = PollEvented<Fd>;
 
 // The Fd in T has to be unique so that tokio can keep track of everything..
-fn stdio<T>(file: T, handle: &Handle)
-            -> io::Result<Option<PollEvented<Fd<T>>>>
-    where T: AsRawFd
+fn stdio(fd: RawFd, handle: &Handle)
+            -> io::Result<Option<PollEvented<Fd>>>
 {
-    println!("{:?}", file.as_raw_fd());
+    println!("{:?}", fd);
     // Set the fd to nonblocking before we pass it to the event loop
-    set_nonblock(file.as_raw_fd())?;
-    let io = PollEvented::new(Fd(file), handle)?;
+    set_nonblock(fd)?;
+    let io = PollEvented::new(Fd(fd), handle)?;
     Ok(Some(io))
 }
