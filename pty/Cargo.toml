@@ -8,3 +8,7 @@ futures = "0.1"
 libc = "0.2"
 mio = "0.6"
 tokio-core = "0.1"
+log = "0.3"
+
+[dev-dependencies]
+env_logger = "0.4"

@@ -32,9 +32,10 @@ pub struct Process {
     pub pty: pty::Pty,
     //cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
-    window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>
+    window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>,
     //stdin: PipeWriter,
     //stdout: PipeReader,
+    handle: &Handle,
 }
 
 impl Process {
@@ -53,6 +54,7 @@ impl Process {
             window_sizes: HashMap::new(),
             //stdin: stdin,
             //stdout: stdout,
+            handle: handle,
         }
     }
 
