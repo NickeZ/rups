@@ -82,6 +82,10 @@ impl Process {
         Ok(())
     }
 
+    pub fn wait(&mut self) {
+        self.pty.wait();
+    }
+
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
         println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
         self.window_sizes.insert(addr, ws);
