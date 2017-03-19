@@ -12,7 +12,7 @@ use std::process;
 
 use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
-use mio::unix::EventedFd;
+use mio::unix::{EventedFd, UnixReady};
 use tokio_core::reactor::{Handle, PollEvented};
 
 #[cfg(test)]
@@ -132,8 +132,13 @@ impl Pty {
         unsafe { libc::close(slave) };
 
         let master = unsafe {File::from_raw_fd(master) };
-        let master_out = master.try_clone().expect("Failed to dup fd");
-        let master_in = master.try_clone().expect("Failed to dup fd");
+        let mut master_out = master.try_clone().expect("Failed to dup fd");
+        let mut master_in = master.try_clone().expect("Failed to dup fd");
+
+        master_out.write("test\ntest2\n".as_bytes()).expect("Failed towrite");
+        let mut buf = [0u8; 64];
+        let len = master_in.read(&mut buf).expect("failed to read");
+        println!("{:?}", String::from_utf8(buf[0..len].to_vec()));
 
         println!("{:?} {:?} {:?}", master, master_in, master_out);
 
@@ -417,7 +422,7 @@ impl<T> Evented for Fd<T> where T: AsRawFd {
                 -> io::Result<()> {
         EventedFd(&self.0.as_raw_fd()).register(poll,
                                                 token,
-                                                interest | Ready::hup(),
+                                                interest | UnixReady::hup(),
                                                 opts)
     }
 
@@ -429,7 +434,7 @@ impl<T> Evented for Fd<T> where T: AsRawFd {
                   -> io::Result<()> {
         EventedFd(&self.0.as_raw_fd()).reregister(poll,
                                                   token,
-                                                  interest | Ready::hup(),
+                                                  interest | UnixReady::hup(),
                                                   opts)
     }
 
