@@ -29,18 +29,17 @@ pub struct Process {
     mailbox: Vec<String>,
     foreground: bool,
     //ptyserver: TtyServer,
-    pub pty: pty::Pty,
+    child: Option<pty::Child>,
     //cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
     window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>,
     //stdin: PipeWriter,
     //stdout: PipeReader,
-    handle: &Handle,
+    handle: Handle,
 }
 
 impl Process {
-    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: &Handle) -> Process {
-        let pty = pty::Pty::new(handle);
+    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: Handle) -> Process {
         //pty.register(handle);
         Process {
             args: args,
@@ -48,7 +47,7 @@ impl Process {
             mailbox: Vec::new(),
             foreground: foreground,
             //ptyserver: ptyserver,
-            pty: pty,
+            child: None,
             //cid: None,
             exit_status: None,
             window_sizes: HashMap::new(),
@@ -59,6 +58,7 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
+        let pty = pty::Pty::new();
         //if self.cid.is_some() {
         //    return Err(ProcessError::ProcessAlreadySpawned);
         //}
@@ -71,7 +71,7 @@ impl Process {
             }
         }
 
-        match self.pty.spawn(command) {
+        match pty.spawn(command, &self.handle) {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(_) => {
                 //self.cid = Some(p.id());
@@ -85,7 +85,9 @@ impl Process {
     }
 
     pub fn wait(&mut self) {
-        self.pty.wait();
+        if let Some(child) = self.child {
+            child.wait();
+        }
     }
 
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
@@ -100,7 +102,7 @@ impl Process {
                 min_ws.1 = ws.1;
             }
         }
-        self.pty.set_window_size(min_ws.0, min_ws.1);
+        self.child.map(|child| child.set_window_size(min_ws.0, min_ws.1));
     }
 
     //pub fn split(self) -> Result<(pty::PipeWriter, pty::PipeReader), ()> {

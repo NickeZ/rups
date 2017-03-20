@@ -90,7 +90,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
         options.command.clone(),
         history.clone(),
         options.foreground,
-        &handle,
+        core.handle(),
     );
     if options.autostart {
         child.spawn().expect("Failed to launch process");
