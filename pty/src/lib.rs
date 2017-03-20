@@ -85,13 +85,6 @@ impl From<u16> for Columns {
     }
 }
 
-pub struct Child {
-    inner: process::Child,
-    master: (RawFd, RawFd),
-    input: Option<PtySink>,
-    output: Option<PtyStream>,
-}
-
 pub struct Pty {
     master: RawFd,
     slave: Option<RawFd>,
@@ -179,9 +172,16 @@ impl Pty {
     }
 }
 
+pub struct Child {
+    inner: process::Child,
+    master: (RawFd, RawFd),
+    input: Option<PtySink>,
+    output: Option<PtyStream>,
+}
+
 impl Child {
-    pub fn wait(&mut self) -> std::process::ExitStatus {
-        self.inner.wait().expect("Wait failed")
+    pub fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        self.inner.wait()
     }
 
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
