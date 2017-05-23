@@ -7,6 +7,11 @@ use std::rc::{Rc};
 use std::error::{Error};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::io;
+use std::mem;
+
+use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
+use futures::task::Task;
 
 use pty;
 use tokio_core::reactor::Handle;
@@ -20,6 +25,14 @@ use history::{History};
 #[derive(Debug)]
 pub enum ProcessError {
     ProcessAlreadySpawned,
+    NoChild,
+    IoError(io::Error),
+}
+
+impl From<io::Error> for ProcessError {
+    fn from(err: io::Error) -> Self {
+        ProcessError::IoError(err)
+    }
 }
 
 #[allow(dead_code)]
@@ -33,6 +46,8 @@ pub struct Process {
     //cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
     window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>,
+    stdin: Option<Rc<RefCell<pty::PtySink>>>,
+    stdout: Option<Rc<RefCell<pty::PtyStream>>>,
     //stdin: PipeWriter,
     //stdout: PipeReader,
     handle: Handle,
@@ -51,6 +66,8 @@ impl Process {
             //cid: None,
             exit_status: None,
             window_sizes: HashMap::new(),
+            stdin: None,
+            stdout: None,
             //stdin: stdin,
             //stdout: stdout,
             handle: handle,
@@ -58,6 +75,10 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
+        if let Some(mut child) = self.child.take() {
+            child.kill()?;
+            child.wait()?;
+        }
         let pty = pty::Pty::new();
         //if self.cid.is_some() {
         //    return Err(ProcessError::ProcessAlreadySpawned);
@@ -75,6 +96,8 @@ impl Process {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(child) => {
                 self.child = Some(child);
+                self.stdin = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().input().take().unwrap())));
+                self.stdout = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().output().take().unwrap())));
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
@@ -85,11 +108,24 @@ impl Process {
         Ok(())
     }
 
-    pub fn wait(&mut self) {
+    pub fn respawn(&mut self) -> Result<(), ProcessError> {
+        let mut input = self.stdin.as_ref().unwrap().borrow_mut();
+        *input = self.child.as_mut().unwrap().input().take().unwrap();
+        let mut output = self.stdout.as_ref().unwrap().borrow_mut();
+        *output = self.child.as_mut().unwrap().output().take().unwrap();
+        //let input = self.child.as_mut().unwrap().input().take().unwrap();
+        //let output = self.child.as_mut().unwrap().output().take().unwrap();
+        //mem::replace(&mut *self.stdin.as_ref().unwrap().borrow_mut(), input);
+        //mem::replace(&mut *self.stdout.as_ref().unwrap().borrow_mut(), output);
+        Ok(())
+    }
+
+    pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
         let child = self.child.take();
         if let Some(mut child) = child {
-            child.wait();
+            return child.wait().map_err(|e| From::from(e));
         }
+        Err(ProcessError::NoChild)
     }
 
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
@@ -119,13 +155,20 @@ impl Process {
     //    }
     //}
 
-    pub fn output(&mut self) -> Option<pty::PtyStream> {
-        self.child.as_mut().unwrap().output().take()
+    pub fn output(&mut self) -> Option<ProcessReader> {
+        Some(ProcessReader::new(self.stdout.as_ref().unwrap().clone()))
     }
 
-    pub fn input(&mut self) -> Option<pty::PtySink> {
-        self.child.as_mut().unwrap().input().take()
+    pub fn input(&mut self) -> Option<ProcessWriter> {
+        Some(ProcessWriter::new(self.stdin.as_ref().unwrap().clone()))
     }
+    //pub fn output(&mut self) -> Option<pty::PtyStream> {
+    //    self.child.as_mut().unwrap().output().take()
+    //}
+
+    //pub fn input(&mut self) -> Option<pty::PtySink> {
+    //    self.child.as_mut().unwrap().input().take()
+    //}
 
     //pub fn read(&mut self) {
     //    let mut buffer = [0;2048];
@@ -182,4 +225,50 @@ impl Process {
     //    }
     //    self.exit_status.as_ref().unwrap()
     //}
+}
+
+pub struct ProcessWriter {
+    inner: Rc<RefCell<pty::PtySink>>,
+}
+
+impl ProcessWriter {
+    fn new(inner: Rc<RefCell<pty::PtySink>>) -> ProcessWriter {
+        ProcessWriter {
+            inner: inner,
+        }
+    }
+}
+
+impl Sink for ProcessWriter {
+    type SinkItem = Vec<u8>;
+    type SinkError = io::Error;
+
+    fn start_send(&mut self,
+                  item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
+        self.inner.borrow_mut().start_send(item)
+    }
+    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
+        self.inner.borrow_mut().poll_complete()
+    }
+}
+
+pub struct ProcessReader {
+    inner: Rc<RefCell<pty::PtyStream>>,
+}
+
+impl ProcessReader {
+    fn new(inner: Rc<RefCell<pty::PtyStream>>) -> ProcessReader {
+        ProcessReader {
+            inner: inner,
+        }
+    }
+}
+
+impl Stream for ProcessReader {
+    type Item = Vec<u8>;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        self.inner.borrow_mut().poll()
+    }
 }

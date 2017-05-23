@@ -184,6 +184,10 @@ impl Child {
         self.inner.wait()
     }
 
+    pub fn kill(&mut self) -> io::Result<()> {
+        self.inner.kill()
+    }
+
     pub fn set_window_size(&mut self, rows: Rows, columns: Columns) {
         info!("set rows: {:?}, cols: {:?}", rows, columns);
         let mut ws = get_winsize(self.master.0).unwrap();
