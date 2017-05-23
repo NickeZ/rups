@@ -28,7 +28,7 @@ use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 
-use futures::{Future, Sink};
+use futures::{Future, Sink, Stream};
 
 //use mio::*;
 //use mio::timer::{Timer};
@@ -39,7 +39,7 @@ use termios::*;
 
 use history::*;
 //use telnet_server::*;
-//use child::Process;
+use child::{ProcessReaders, ProcessWriters};
 use options::Options;
 
 //fn push_info(history:&Rc<RefCell<History>>, message:String) {
@@ -97,19 +97,24 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     }
     let child = Rc::new(RefCell::new(child));
 
-    let hw = HistoryWriter::new(history.clone());
-    let cw = {
-        // limit the borrow of child to this scope
-        let mut child = child.borrow_mut();
-        child.output().unwrap()
-    };
-    let proc_output = hw.send_all(cw)
-        .map_err(|e| {
-            let child = child.clone();
-            println!("relaucnh?");
-            child.borrow_mut().spawn().expect("failed to spawn..");
-            ()
-        });
+    //let (child_writers, child_readers) = {
+    //    // limit the borrow of child to this scope
+    //    let mut child = child.borrow_mut();
+    //    child.split().unwrap()
+    //};
+    let child_readers = ProcessReaders::new(child.clone());
+    let proc_output = child_readers
+        .for_each(|reader| {
+            let hw = HistoryWriter::new(history.clone());
+            hw.send_all(reader).map(|_|())
+        }).map_err(|_|());
+    //let proc_output = hw.send_all(cw)
+    //    .map_err(|e| {
+    //        let child = child.clone();
+    //        println!("relaucnh?");
+    //        child.borrow_mut().spawn().expect("failed to spawn..");
+    //        ()
+    //    });
     //let proc_output = hw.send_all(cw)
     //    .then(|r| {
     //        let child = child.clone();

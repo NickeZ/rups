@@ -155,6 +155,10 @@ impl Process {
         }
     }
 
+    //pub fn split(self) -> Result<(ProcessWriters, ProcessReaders), ()> {
+    //    let process = Rc::new(RefCell::new(self));
+    //    Ok((ProcessWriters::new(process.clone()), ProcessReaders::new(process.clone())))
+    //}
     //pub fn split(self) -> Result<(pty::PipeWriter, pty::PipeReader), ()> {
     //    match self.child {
     //        Some(child) => Ok((child.input(), child.output())),
@@ -165,13 +169,13 @@ impl Process {
     //    }
     //}
 
-    pub fn output(&mut self) -> Option<ProcessReader> {
-        Some(ProcessReader::new(self.stdout.as_ref().unwrap().clone()))
-    }
+    //pub fn output(&mut self) -> Option<ProcessReader> {
+    //    Some(ProcessReader::new(self.stdout.as_ref().unwrap().clone()))
+    //}
 
-    pub fn input(&mut self) -> Option<ProcessWriter> {
-        Some(ProcessWriter::new(self.stdin.as_ref().unwrap().clone()))
-    }
+    //pub fn input(&mut self) -> Option<ProcessWriter> {
+    //    Some(ProcessWriter::new(self.stdin.as_ref().unwrap().clone()))
+    //}
     //pub fn output(&mut self) -> Option<pty::PtyStream> {
     //    self.child.as_mut().unwrap().output().take()
     //}
@@ -237,48 +241,44 @@ impl Process {
     //}
 }
 
-pub struct ProcessWriter {
-    inner: Rc<RefCell<pty::PtySink>>,
+pub struct ProcessWriters {
+    inner: Rc<RefCell<Process>>,
 }
 
-impl ProcessWriter {
-    fn new(inner: Rc<RefCell<pty::PtySink>>) -> ProcessWriter {
-        ProcessWriter {
+impl ProcessWriters {
+    pub fn new(inner: Rc<RefCell<Process>>) -> ProcessWriters {
+        ProcessWriters {
             inner: inner,
         }
     }
 }
 
-impl Sink for ProcessWriter {
-    type SinkItem = Vec<u8>;
-    type SinkError = io::Error;
-
-    fn start_send(&mut self,
-                  item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
-        self.inner.borrow_mut().start_send(item)
-    }
-    fn poll_complete(&mut self) -> Poll<(), Self::SinkError> {
-        self.inner.borrow_mut().poll_complete()
-    }
-}
-
-pub struct ProcessReader {
-    inner: Rc<RefCell<pty::PtyStream>>,
-}
-
-impl ProcessReader {
-    fn new(inner: Rc<RefCell<pty::PtyStream>>) -> ProcessReader {
-        ProcessReader {
-            inner: inner,
-        }
-    }
-}
-
-impl Stream for ProcessReader {
-    type Item = Vec<u8>;
+impl Stream for ProcessWriters {
+    type Item = pty::PtySink;
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.inner.borrow_mut().poll()
+        unimplemented!()
+    }
+}
+
+pub struct ProcessReaders {
+    inner: Rc<RefCell<Process>>,
+}
+
+impl ProcessReaders {
+    pub fn new(inner: Rc<RefCell<Process>>) -> ProcessReaders {
+        ProcessReaders {
+            inner: inner,
+        }
+    }
+}
+
+impl Stream for ProcessReaders {
+    type Item = pty::PtyStream;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        unimplemented!()
     }
 }
