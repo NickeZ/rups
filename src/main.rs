@@ -101,7 +101,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     let cw = {
         // limit the borrow of child to this scope
         let mut child = child.borrow_mut();
-        child.pty.output().take().unwrap()
+        child.output().unwrap()
     };
     let proc_output = hw.send_all(cw)
         .then(|r| {

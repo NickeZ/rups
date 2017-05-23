@@ -73,7 +73,8 @@ impl Process {
 
         match pty.spawn(command, &self.handle) {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
-            Ok(_) => {
+            Ok(child) => {
+                self.child = Some(child);
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
@@ -85,7 +86,8 @@ impl Process {
     }
 
     pub fn wait(&mut self) {
-        if let Some(child) = self.child {
+        let child = self.child.take();
+        if let Some(mut child) = child {
             child.wait();
         }
     }
@@ -102,7 +104,9 @@ impl Process {
                 min_ws.1 = ws.1;
             }
         }
-        self.child.map(|child| child.set_window_size(min_ws.0, min_ws.1));
+        if let Some(ref mut child) = self.child {
+            child.set_window_size(min_ws.0, min_ws.1);
+        }
     }
 
     //pub fn split(self) -> Result<(pty::PipeWriter, pty::PipeReader), ()> {
@@ -115,13 +119,13 @@ impl Process {
     //    }
     //}
 
-    //pub fn output(&mut self) -> pty::PipeReader {
-    //    self.child.unwrap().output()
-    //}
+    pub fn output(&mut self) -> Option<pty::PtyStream> {
+        self.child.as_mut().unwrap().output().take()
+    }
 
-    //pub fn input(&mut self) -> pty::PipeWriter {
-    //    self.child.unwrap().input()
-    //}
+    pub fn input(&mut self) -> Option<pty::PtySink> {
+        self.child.as_mut().unwrap().input().take()
+    }
 
     //pub fn read(&mut self) {
     //    let mut buffer = [0;2048];

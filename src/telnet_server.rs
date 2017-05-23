@@ -77,7 +77,7 @@ impl TelnetServer {
 
     pub fn server(self) -> Box<Future<Item=(), Error=()>>{
         let process = self.process.clone();
-        let child_writer = process.borrow_mut().pty.input().take().unwrap();
+        let child_writer = process.borrow_mut().input().unwrap();
         let x = self.rx.filter_map(move |(peer_addr, x)| {
             match x {
                 TelnetIn::Text {text} => {
