@@ -104,19 +104,24 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
         child.output().unwrap()
     };
     let proc_output = hw.send_all(cw)
-        .then(|r| {
+        .map_err(|e| {
             let child = child.clone();
-            match r {
-                Err(e) => {
-                    println!("relaucnh?");
-                    let mut child = child.borrow_mut();
-                    child.wait();
-                    child.spawn();
-                },
-                _ => ()
-            }
-            Ok(())
+            println!("relaucnh?");
+            child.borrow_mut().spawn().expect("failed to spawn..");
+            ()
         });
+    //let proc_output = hw.send_all(cw)
+    //    .then(|r| {
+    //        let child = child.clone();
+    //        match r {
+    //            Err(e) => {
+    //                println!("relaucnh?");
+    //                child.borrow_mut().spawn().expect("failed to spawn..");
+    //            },
+    //            _ => ()
+    //        }
+    //        Ok(())
+    //    });
 
     let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.noinfo);
     if let Some(binds) = options.binds {

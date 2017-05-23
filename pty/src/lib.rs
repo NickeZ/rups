@@ -295,7 +295,8 @@ impl Stream for PtyStream {
                 if e.kind() == io::ErrorKind::Other {
                     // Process probably exited
                     warn!("Failed to read: {:?}, process died?", e);
-                    return Ok(Async::Ready(None));
+                    return Err(e);
+                    //return Ok(Async::Ready(None));
                 }
                 warn!("Failed to read: {:?}", e);
                 return Err(e);

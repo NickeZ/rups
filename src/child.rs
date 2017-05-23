@@ -78,6 +78,7 @@ impl Process {
         if let Some(mut child) = self.child.take() {
             child.kill()?;
             child.wait()?;
+            drop(child);
         }
         let pty = pty::Pty::new();
         //if self.cid.is_some() {
@@ -96,8 +97,22 @@ impl Process {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(child) => {
                 self.child = Some(child);
-                self.stdin = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().input().take().unwrap())));
-                self.stdout = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().output().take().unwrap())));
+                if self.stdin.is_some() {
+                    if let Some(ref stdin) = self.stdin.as_ref() {
+                        let mut input = stdin.borrow_mut();
+                        *input = self.child.as_mut().unwrap().input().take().unwrap();
+                    }
+                } else {
+                    self.stdin = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().input().take().unwrap())));
+                }
+                if self.stdout.is_some() {
+                    if let Some(ref stdout) = self.stdout.as_ref() {
+                        let mut output = stdout.borrow_mut();
+                        *output = self.child.as_mut().unwrap().output().take().unwrap();
+                    }
+                } else {
+                    self.stdout = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().output().take().unwrap())));
+                }
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
@@ -108,21 +123,16 @@ impl Process {
         Ok(())
     }
 
-    pub fn respawn(&mut self) -> Result<(), ProcessError> {
-        let mut input = self.stdin.as_ref().unwrap().borrow_mut();
-        *input = self.child.as_mut().unwrap().input().take().unwrap();
-        let mut output = self.stdout.as_ref().unwrap().borrow_mut();
-        *output = self.child.as_mut().unwrap().output().take().unwrap();
-        //let input = self.child.as_mut().unwrap().input().take().unwrap();
-        //let output = self.child.as_mut().unwrap().output().take().unwrap();
-        //mem::replace(&mut *self.stdin.as_ref().unwrap().borrow_mut(), input);
-        //mem::replace(&mut *self.stdout.as_ref().unwrap().borrow_mut(), output);
-        Ok(())
-    }
+    //pub fn respawn(&mut self) -> Result<(), ProcessError> {
+    //    //let input = self.child.as_mut().unwrap().input().take().unwrap();
+    //    //let output = self.child.as_mut().unwrap().output().take().unwrap();
+    //    //mem::replace(&mut *self.stdin.as_ref().unwrap().borrow_mut(), input);
+    //    //mem::replace(&mut *self.stdout.as_ref().unwrap().borrow_mut(), output);
+    //    Ok(())
+    //}
 
     pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
-        let child = self.child.take();
-        if let Some(mut child) = child {
+        if let Some(mut child) = self.child.take() {
             return child.wait().map_err(|e| From::from(e));
         }
         Err(ProcessError::NoChild)
