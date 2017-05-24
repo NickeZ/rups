@@ -78,23 +78,22 @@ impl TelnetServer {
     pub fn server(self) -> Box<Future<Item=(), Error=()>>{
         let child_writers = child::ProcessWriters::new(self.process.clone());
         let process = self.process.clone();
-        let x = child_writers.for_each(move |writer| {
-            let process = process.clone();
-            //let child_writer = process.borrow_mut().input().unwrap();
-            let x = self.rx.filter_map(move |(peer_addr, x)| {
-                match x {
-                    TelnetIn::Text {text} => {
-                        return Some(text)
-                    },
-                    TelnetIn::NAWS {rows, columns} => {
-                        process.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
-                    },
-                    TelnetIn::Carriage => println!("CR"),
-                }
-                None
-            }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-            writer.send_all(x).map(|_|())
-        }).map_err(|_|());
+        let rx = self.rx;
+        let rx = rx.filter_map(move |(peer_addr, x)| {
+            match x {
+                TelnetIn::Text {text} => {
+                    return Some(text)
+                },
+                TelnetIn::NAWS {rows, columns} => {
+                    process.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
+                },
+                TelnetIn::Carriage => println!("CR"),
+            }
+            None
+        }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
+        let x = child_writers.fold(rx, move |rx, writer| {
+            writer.send_all(rx).map(|(_, rx)| rx)
+        }).map_err(|_| ());
         //let x = child_writer.send_all(x).map_err(|_|());
         let server = futures::future::join_all(self.listeners).map(|_|()).map_err(|_|());
         return Box::new(x.join(server).map(|_|()));
