@@ -3,7 +3,7 @@ use std::rc::{Rc};
 use std::net::{SocketAddr};
 use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
-use tokio_core::io::Io;
+use tokio_io::AsyncRead;
 use futures::{self, Stream, Sink, Future};
 use futures::sync::mpsc;
 use std::io;

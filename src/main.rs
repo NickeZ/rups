@@ -15,6 +15,7 @@ extern crate termios;
 extern crate byteorder;
 extern crate futures;
 extern crate tokio_core;
+extern crate tokio_io;
 
 mod history;
 mod telnet_server;
