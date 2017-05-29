@@ -98,36 +98,17 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     }
     let child = Rc::new(RefCell::new(child));
 
-    //let (child_writers, child_readers) = {
-    //    // limit the borrow of child to this scope
-    //    let mut child = child.borrow_mut();
-    //    child.split().unwrap()
-    //};
     let child_readers = ProcessReaders::new(child.clone());
     let proc_output = child_readers
         .for_each(|reader| {
             let hw = HistoryWriter::new(history.clone());
-            hw.send_all(reader).map(|_|())
+            hw.send_all(reader).map(|_|()).or_else(|_|{
+                let child = child.clone();
+                println!("restart");
+                child.borrow_mut().spawn().expect("failed to spawn..");
+                futures::future::ok(())
+            })
         }).map_err(|_|());
-    //let proc_output = hw.send_all(cw)
-    //    .map_err(|e| {
-    //        let child = child.clone();
-    //        println!("relaucnh?");
-    //        child.borrow_mut().spawn().expect("failed to spawn..");
-    //        ()
-    //    });
-    //let proc_output = hw.send_all(cw)
-    //    .then(|r| {
-    //        let child = child.clone();
-    //        match r {
-    //            Err(e) => {
-    //                println!("relaucnh?");
-    //                child.borrow_mut().spawn().expect("failed to spawn..");
-    //            },
-    //            _ => ()
-    //        }
-    //        Ok(())
-    //    });
 
     let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.noinfo);
     if let Some(binds) = options.binds {

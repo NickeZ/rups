@@ -46,8 +46,8 @@ pub struct Process {
     //cid: Option<u32>,
     exit_status: Option<process::ExitStatus>,
     window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>,
-    stdin: Option<Rc<RefCell<pty::PtySink>>>,
-    stdout: Option<Rc<RefCell<pty::PtyStream>>>,
+    stdin: Option<pty::PtySink>,
+    stdout: Option<pty::PtyStream>,
     //stdin: PipeWriter,
     //stdout: PipeReader,
     handle: Handle,
@@ -97,22 +97,8 @@ impl Process {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
             Ok(child) => {
                 self.child = Some(child);
-                if self.stdin.is_some() {
-                    if let Some(ref stdin) = self.stdin.as_ref() {
-                        let mut input = stdin.borrow_mut();
-                        *input = self.child.as_mut().unwrap().input().take().unwrap();
-                    }
-                } else {
-                    self.stdin = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().input().take().unwrap())));
-                }
-                if self.stdout.is_some() {
-                    if let Some(ref stdout) = self.stdout.as_ref() {
-                        let mut output = stdout.borrow_mut();
-                        *output = self.child.as_mut().unwrap().output().take().unwrap();
-                    }
-                } else {
-                    self.stdout = Some(Rc::new(RefCell::new(self.child.as_mut().unwrap().output().take().unwrap())));
-                }
+                self.stdin = Some(self.child.as_mut().unwrap().input().take().unwrap());
+                self.stdout = Some(self.child.as_mut().unwrap().output().take().unwrap());
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
@@ -258,7 +244,10 @@ impl Stream for ProcessWriters {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        unimplemented!()
+        if let Some(stdin) = self.inner.borrow_mut().stdin.take() {
+            return Ok(Async::Ready(Some(stdin)));
+        }
+        Ok(Async::NotReady)
     }
 }
 
@@ -279,6 +268,9 @@ impl Stream for ProcessReaders {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        unimplemented!()
+        if let Some(stdout) = self.inner.borrow_mut().stdout.take() {
+            return Ok(Async::Ready(Some(stdout)));
+        }
+        Ok(Async::NotReady)
     }
 }
