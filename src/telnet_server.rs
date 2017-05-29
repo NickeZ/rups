@@ -75,7 +75,7 @@ impl TelnetServer {
         self.listeners.push(Box::new(sserver))
     }
 
-    pub fn server(self) -> Box<Future<Item=(), Error=()>>{
+    pub fn server(self, handle: reactor::Handle) -> Box<Future<Item=(), Error=()>>{
         let child_writers = child::ProcessWriters::new(self.process.clone());
         let process = self.process.clone();
         let rx = self.rx;
@@ -91,11 +91,15 @@ impl TelnetServer {
             }
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-        let x = child_writers.fold(rx, move |rx, writer| {
+        let x = child_writers.fold(rx, |rx, writer| {
             writer.send_all(rx).map(|(_, rx)| rx)
-        }).map_err(|_| ());
+        }).map_err(|_| ()).map(|_| ());
         //let x = child_writer.send_all(x).map_err(|_|());
         let server = futures::future::join_all(self.listeners).map(|_|()).map_err(|_|());
-        return Box::new(x.join(server).map(|_|()));
+        handle.spawn(server);
+        Box::new(x)
+        //x.join(server);
+        //unimplemented!()
+        //Box::new(server)
     }
 }

@@ -141,9 +141,10 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
         }
     }
 
-    let join = telnet_server.server().join(proc_output).map(|_| ());
+    let join = telnet_server.server(core.handle()).join(proc_output).map(|_| ());
 
     core.run(join).unwrap()
+    //core.run(proc_output).map(|_| ()).unwrap();
 //
 
 //    let mut prompt_input:Option<PipeReader> = None;
