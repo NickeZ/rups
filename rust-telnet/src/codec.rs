@@ -6,8 +6,9 @@ fn it_works() {
 use std::{io, str};
 use std::io::Cursor;
 
-use tokio_core::io::{Codec, EasyBuf};
+use tokio_io::codec;
 use byteorder::{BigEndian, ReadBytesExt};
+use bytes::{BytesMut, BufMut};
 
 use parser::{TelnetTokenizer, TelnetToken};
 
@@ -65,24 +66,29 @@ pub enum TelnetIn {
 }
 //pub struct TelnetOut;
 
-impl Codec for TelnetCodec {
-    type In = TelnetIn;
-    type Out = Vec<u8>;
+impl codec::Decoder for TelnetCodec {
+    type Item = TelnetIn;
+    type Error = io::Error;
 
-    fn decode(&mut self, buf: &mut EasyBuf) -> io::Result<Option<TelnetIn>> {
-        let len = buf.len();
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        let len = src.len();
         if len == 0 {
             return Ok(None);
         }
-        let (res, remainder_len) = self.decoder.decode(buf.as_ref());
+        let (res, remainder_len) = self.decoder.decode(src.as_ref());
         println!("Will drain {} from {}", len - remainder_len, len);
-        buf.drain_to(len - remainder_len);
+        src.split_to(len - remainder_len);
         res
     }
+}
 
-    fn encode(&mut self, msg: Vec<u8>, buf: &mut Vec<u8>) -> io::Result<()> {
-        for c in msg {
-            buf.push(c);
+impl codec::Encoder for TelnetCodec {
+    type Item = Vec<u8>;
+    type Error = io::Error;
+
+    fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        for c in item {
+            dst.put(c);
         }
         Ok(())
     }

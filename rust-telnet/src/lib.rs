@@ -1,5 +1,6 @@
 extern crate byteorder;
-extern crate tokio_core;
+extern crate tokio_io;
+extern crate bytes;
 
 pub mod carrier;
 
