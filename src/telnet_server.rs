@@ -1,5 +1,6 @@
 use std::cell::{RefCell};
 use std::rc::{Rc};
+use std::sync::Arc;
 use std::net::{SocketAddr};
 use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
@@ -21,7 +22,7 @@ use child;
 //}
 
 pub struct TelnetServer {
-    process: Rc<RefCell<child::Process>>,
+    process: Arc<RefCell<child::Process>>,
     history: Rc<RefCell<History>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
@@ -30,7 +31,7 @@ pub struct TelnetServer {
 }
 
 impl TelnetServer {
-    pub fn new(history: Rc<RefCell<History>>, process: Rc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
+    pub fn new(history: Rc<RefCell<History>>, process: Arc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
         // Create a channel for all telnet clients to put their data
         let (tx, rx) = mpsc::channel(2048);
         TelnetServer {
@@ -91,9 +92,23 @@ impl TelnetServer {
             }
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-        let x = child_writers.fold(rx, |rx, writer| {
-            writer.send_all(rx).map(|(_, rx)| rx)
-        }).map_err(|_| ()).map(|_| ());
+        let x = child_writers.fold(rx.boxed(), |rx, writer| {
+            rx.into_future().map(|(item, rx)| {
+                writer
+                    .send(item.unwrap())
+                    .and_then(|sink| sink.flush())
+                    .and_then(|_| Ok(rx)).into_stream().flatten().boxed()
+            }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"))
+            //rx.fold(writer, |writer, item| {
+            //    //futures::future::ok::<_, io::Error>(writer)
+            //}).map_err(|_| {println!("stahp")})
+            //Ok(rx)
+            //futures::future::ok::<_, io::Error>(rx)
+            //writer
+            //    .send_all(rx)
+            //    .map(|(_, rx)| rx)
+            //    .map_err(|x| {println!("end of sink... {:?}", x); x})
+        }).map_err(|_|()).map(|_|());
         //let x = child_writer.send_all(x).map_err(|_|());
         let server = futures::future::join_all(self.listeners).map(|_|()).map_err(|_|());
         handle.spawn(server);

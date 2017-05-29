@@ -28,6 +28,7 @@ mod options;
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
+use std::sync::Arc;
 
 use futures::{Future, Sink, Stream};
 
@@ -96,7 +97,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     if options.autostart {
         child.spawn().expect("Failed to launch process");
     }
-    let child = Rc::new(RefCell::new(child));
+    let child = Arc::new(RefCell::new(child));
 
     let child_readers = ProcessReaders::new(child.clone());
     let proc_output = child_readers

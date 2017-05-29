@@ -1,6 +1,7 @@
 use std::process;
 use std::cell::{RefCell};
 use std::rc::{Rc};
+use std::sync::Arc;
 //use std::io::prelude::*;
 //use std::io::{self};
 //use std::os::unix::io::{FromRawFd, AsRawFd};
@@ -228,11 +229,11 @@ impl Process {
 }
 
 pub struct ProcessWriters {
-    inner: Rc<RefCell<Process>>,
+    inner: Arc<RefCell<Process>>,
 }
 
 impl ProcessWriters {
-    pub fn new(inner: Rc<RefCell<Process>>) -> ProcessWriters {
+    pub fn new(inner: Arc<RefCell<Process>>) -> ProcessWriters {
         ProcessWriters {
             inner: inner,
         }
@@ -252,11 +253,11 @@ impl Stream for ProcessWriters {
 }
 
 pub struct ProcessReaders {
-    inner: Rc<RefCell<Process>>,
+    inner: Arc<RefCell<Process>>,
 }
 
 impl ProcessReaders {
-    pub fn new(inner: Rc<RefCell<Process>>) -> ProcessReaders {
+    pub fn new(inner: Arc<RefCell<Process>>) -> ProcessReaders {
         ProcessReaders {
             inner: inner,
         }

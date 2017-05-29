@@ -342,7 +342,7 @@ impl Sink for PtySink {
                         trace!("not ready to write: {:?}", e);
                         return Ok(AsyncSink::NotReady(item));
                     }
-                    warn!("Failed to write: {:?}", e);
+                    warn!("start_send(): Failed to write: {:?}", e);
                     return Err(e);
                 }
             }
@@ -379,7 +379,8 @@ impl Sink for PtySink {
                 Err(e) => {
                     //self.buf.append(copy.drain(..).collect().iter());
                     if e.kind() != io::ErrorKind::WouldBlock {
-                        warn!("Failed to write: {:?}", e);
+                        warn!("poll_complete(): Failed to write: {:?}", e);
+                        //res = Ok(Async::Ready(None));
                         res = Err(e);
                     }
                 },
