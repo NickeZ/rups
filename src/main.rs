@@ -120,11 +120,9 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
 
     let sigint_handling = terminate.and_then(|signal| {
         println!("got stream of signals");
-        signal.for_each(|signal| {
-            println!("DIE {:?}", signal);
-            //panic!("stahp");
-            //Ok(())
-            Err(io::Error::new(io::ErrorKind::Other, "mupp"))
+        signal.into_future().then(|_result| {
+            println!("stahp ");
+            Ok(())
         })
     }).map_err(|_|println!("error signal"));
 
