@@ -113,6 +113,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
             println!("CHILD DIED {:?}", signal);
             let child = child.clone();
             child.lock().unwrap().wait().unwrap();
+            println!("CHILD reaped {:?}", signal);
             Ok(())
         })
     }).map_err(|_|println!("error signal"));
@@ -134,7 +135,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
             hw.send_all(reader).map(|_|()).or_else(|_|{
                 let child = child.clone();
                 println!("restart");
-                child.lock().unwrap().spawn().expect("failed to spawn..");
+                //child.lock().unwrap().spawn().expect("failed to spawn..");
                 futures::future::ok(())
             })
         }).map_err(|_|());
