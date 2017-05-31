@@ -1,6 +1,6 @@
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::net::{SocketAddr};
 use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
@@ -24,7 +24,7 @@ use child;
 //}
 
 pub struct TelnetServer {
-    process: Arc<RefCell<child::Process>>,
+    process: Arc<Mutex<child::Process>>,
     history: Rc<RefCell<History>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
@@ -33,7 +33,7 @@ pub struct TelnetServer {
 }
 
 impl TelnetServer {
-    pub fn new(history: Rc<RefCell<History>>, process: Arc<RefCell<child::Process>>, noinfo: bool) -> TelnetServer {
+    pub fn new(history: Rc<RefCell<History>>, process: Arc<Mutex<child::Process>>, noinfo: bool) -> TelnetServer {
         // Create a channel for all telnet clients to put their data
         let (tx, rx) = mpsc::channel(2048);
         TelnetServer {
@@ -88,7 +88,7 @@ impl TelnetServer {
                     return Some(text)
                 },
                 TelnetIn::NAWS {rows, columns} => {
-                    process.borrow_mut().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
+                    process.lock().unwrap().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
                 },
                 TelnetIn::Carriage => println!("CR"),
             }

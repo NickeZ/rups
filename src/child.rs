@@ -1,7 +1,7 @@
 use std::process;
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 //use std::io::prelude::*;
 //use std::io::{self};
 //use std::os::unix::io::{FromRawFd, AsRawFd};
@@ -13,6 +13,8 @@ use std::mem;
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
 use futures::task::Task;
+
+use libc;
 
 use pty;
 use tokio_core::reactor::Handle;
@@ -229,11 +231,11 @@ impl Process {
 }
 
 pub struct ProcessWriters {
-    inner: Arc<RefCell<Process>>,
+    inner: Arc<Mutex<Process>>,
 }
 
 impl ProcessWriters {
-    pub fn new(inner: Arc<RefCell<Process>>) -> ProcessWriters {
+    pub fn new(inner: Arc<Mutex<Process>>) -> ProcessWriters {
         ProcessWriters {
             inner: inner,
         }
@@ -245,7 +247,7 @@ impl Stream for ProcessWriters {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        if let Some(stdin) = self.inner.borrow_mut().stdin.take() {
+        if let Some(stdin) = self.inner.lock().unwrap().stdin.take() {
             return Ok(Async::Ready(Some(stdin)));
         }
         Ok(Async::NotReady)
@@ -253,11 +255,11 @@ impl Stream for ProcessWriters {
 }
 
 pub struct ProcessReaders {
-    inner: Arc<RefCell<Process>>,
+    inner: Arc<Mutex<Process>>,
 }
 
 impl ProcessReaders {
-    pub fn new(inner: Arc<RefCell<Process>>) -> ProcessReaders {
+    pub fn new(inner: Arc<Mutex<Process>>) -> ProcessReaders {
         ProcessReaders {
             inner: inner,
         }
@@ -269,7 +271,7 @@ impl Stream for ProcessReaders {
     type Error = io::Error;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        if let Some(stdout) = self.inner.borrow_mut().stdout.take() {
+        if let Some(stdout) = self.inner.lock().unwrap().stdout.take() {
             return Ok(Async::Ready(Some(stdout)));
         }
         Ok(Async::NotReady)

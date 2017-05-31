@@ -17,6 +17,7 @@ extern crate byteorder;
 extern crate futures;
 extern crate tokio_core;
 extern crate tokio_io;
+extern crate tokio_signal;
 
 mod history;
 mod telnet_server;
@@ -30,7 +31,7 @@ mod send_all;
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::{Future, Sink, Stream};
 
@@ -57,7 +58,7 @@ fn main() {
     if unsafe{libc::isatty(libc::STDIN_FILENO)} == 1 {
         termios = Some(Termios::from_fd(libc::STDIN_FILENO).unwrap());
     }
-    let signal = chan_signal::notify(&[Signal::INT, Signal::TERM]);
+    //let signal = chan_signal::notify(&[Signal::INT, Signal::TERM, Signal::CHLD]);
 
     let(sdone, rdone) = chan::sync(0);
 
@@ -67,16 +68,17 @@ fn main() {
         panic!("No network binds!");
     }
 
-    ::std::thread::spawn(move || run(options, sdone));
+    //::std::thread::spawn(move || run(options, sdone));
+    run(options, sdone);
 
-    chan_select! {
-        signal.recv() -> signal => {
-            println!("Received signal {:?}, exiting...", signal)
-        },
-        rdone.recv() => {
-            println!("Program completed normally");
-        }
-    }
+    //chan_select! {
+    //    signal.recv() -> signal => {
+    //        println!("Received signal {:?}, exiting...", signal)
+    //    },
+    //    rdone.recv() => {
+    //        println!("Program completed normally");
+    //    }
+    //}
     // Reset the termios after exiting
     if let Some(ref termios) = termios {
         let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, termios).unwrap();
@@ -99,7 +101,30 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     if options.autostart {
         child.spawn().expect("Failed to launch process");
     }
-    let child = Arc::new(RefCell::new(child));
+    let child = Arc::new(Mutex::new(child));
+
+    let terminate = tokio_signal::unix::Signal::new(libc::SIGINT, &handle);
+    let dead_children = tokio_signal::unix::Signal::new(libc::SIGCHLD, &handle);
+
+    let sigchld_handling = dead_children.and_then(|signal| {
+        println!("got stream of signals");
+        signal.for_each(|signal| {
+            println!("CHILD DIED {:?}", signal);
+            let child = child.clone();
+            child.lock().unwrap().wait().unwrap();
+            Ok(())
+        })
+    }).map_err(|_|println!("error signal"));
+
+    let sigint_handling = terminate.and_then(|signal| {
+        println!("got stream of signals");
+        signal.for_each(|signal| {
+            println!("DIE {:?}", signal);
+            //panic!("stahp");
+            //Ok(())
+            Err(())
+        })
+    }).map_err(|_|println!("error signal"));
 
     let child_readers = ProcessReaders::new(child.clone());
     let proc_output = child_readers
@@ -108,7 +133,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
             hw.send_all(reader).map(|_|()).or_else(|_|{
                 let child = child.clone();
                 println!("restart");
-                child.borrow_mut().spawn().expect("failed to spawn..");
+                child.lock().unwrap().spawn().expect("failed to spawn..");
                 futures::future::ok(())
             })
         }).map_err(|_|());
@@ -125,9 +150,24 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
         }
     }
 
-    let join = telnet_server.server(core.handle()).join(proc_output).map(|_| ());
+    //let join = telnet_server.server(core.handle()).join(proc_output).map(|_| ());
+    let telnet_server = telnet_server.server(core.handle());
 
-    core.run(join).unwrap()
+    let join = futures::future::join_all(vec![
+        Box::new(sigchld_handling) as Box<Future<Item=(), Error=()>>,
+        Box::new(proc_output) as Box<Future<Item=(), Error=()>>,
+        telnet_server,
+    ]).map(|_| ());
+
+    let select = futures::future::select_all(vec![
+        Box::new(join) as Box<Future<Item=(), Error=()>>,
+        Box::new(sigint_handling) as Box<Future<Item=(), Error=()>>,
+    ]).map(|_| ());
+
+
+    match core.run(select) {
+        _ => println!("Done"),
+    };
     //core.run(proc_output).map(|_| ()).unwrap();
 //
 

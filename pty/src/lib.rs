@@ -210,6 +210,7 @@ impl Child {
 impl Drop for Child {
     fn drop(&mut self) {
         // Ignore error for same reason as FileDesc in rust stdlib.
+        debug!("Dropping stdin/stdout fds {} {}", self.master.0, self.master.1);
         let _ = unsafe{ libc::close(self.master.0) };
         let _ = unsafe{ libc::close(self.master.1) };
     }
@@ -278,9 +279,9 @@ impl Stream for PtyStream {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
         let mut buf = [0 as u8;2048];
-        trace!("Will read from {:?}", self.ptyio);
         match self.ptyio.read(&mut buf) {
             Ok(len) => {
+                trace!("Read {} bytes from {:?}", len, self.ptyio);
                 let mut vec = Vec::new();
                 for i in 0..len {
                     vec.push(buf[i]);
@@ -294,7 +295,7 @@ impl Stream for PtyStream {
                 }
                 if e.kind() == io::ErrorKind::Other {
                     // Process probably exited
-                    warn!("Failed to read: {:?}, process died?", e);
+                    warn!("Failed to read from {:?}: {:?}, process died?", self.ptyio, e);
                     return Err(e);
                     //return Ok(Async::Ready(None));
                 }
@@ -330,10 +331,9 @@ impl Sink for PtySink {
             return Ok(AsyncSink::Ready);
         }
         {
-            trace!("Will write to {:?}", self.ptyin);
             match self.ptyin.write(item.as_slice()) {
                 Ok(len) => {
-                    trace!("wrote {}", len);
+                    trace!("wrote {} to {:?}", len, self.ptyin);
                     std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
                     written_len = len;
                 },
@@ -353,7 +353,6 @@ impl Sink for PtySink {
                 self.buf.push(*x);
             }
         }
-        debug!("{:?}", self.buf);
         Ok(AsyncSink::Ready)
     }
 
