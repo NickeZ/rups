@@ -5,13 +5,15 @@ use std::net::{SocketAddr};
 use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
 use tokio_io::AsyncRead;
-use futures::{self, Stream, Sink, Future};
+use futures::{self, Stream, Sink, Future, BoxFuture};
+use futures::stream::{BoxStream, once};
 use futures::sync::mpsc;
 use std::io;
 
 use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
+use send_all;
 
 use child;
 
@@ -92,29 +94,17 @@ impl TelnetServer {
             }
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-        let x = child_writers.fold(rx.boxed(), |rx, writer| {
-            rx.into_future().map(|(item, rx)| {
-                writer
-                    .send(item.unwrap())
-                    .and_then(|sink| sink.flush())
-                    .and_then(|_| Ok(rx)).into_stream().flatten().boxed()
-            }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"))
-            //rx.fold(writer, |writer, item| {
-            //    //futures::future::ok::<_, io::Error>(writer)
-            //}).map_err(|_| {println!("stahp")})
-            //Ok(rx)
-            //futures::future::ok::<_, io::Error>(rx)
-            //writer
-            //    .send_all(rx)
-            //    .map(|(_, rx)| rx)
-            //    .map_err(|x| {println!("end of sink... {:?}", x); x})
+        let x = child_writers.fold(rx, move |rx, writer| {
+            send_all::new(writer, rx).then(|result| {
+                let (_, rx, reason) = result.unwrap();
+                match reason {
+                    send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
+                    send_all::Reason::SinkEnded => Ok(rx),
+                }
+            })
         }).map_err(|_|()).map(|_|());
-        //let x = child_writer.send_all(x).map_err(|_|());
         let server = futures::future::join_all(self.listeners).map(|_|()).map_err(|_|());
         handle.spawn(server);
         Box::new(x)
-        //x.join(server);
-        //unimplemented!()
-        //Box::new(server)
     }
 }

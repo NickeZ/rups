@@ -13,6 +13,7 @@ extern crate chan_signal;
 extern crate libc;
 extern crate termios;
 extern crate byteorder;
+#[macro_use]
 extern crate futures;
 extern crate tokio_core;
 extern crate tokio_io;
@@ -22,6 +23,7 @@ mod telnet_server;
 //mod telnet_client;
 mod child;
 mod options;
+mod send_all;
 
 //use std::io::prelude::*;
 //use std::os::unix::io::{FromRawFd};
