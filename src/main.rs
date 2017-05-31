@@ -32,6 +32,7 @@ use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::sync::{Arc, Mutex};
+use std::io;
 
 use futures::{Future, Sink, Stream};
 
@@ -122,7 +123,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
             println!("DIE {:?}", signal);
             //panic!("stahp");
             //Ok(())
-            Err(())
+            Err(io::Error::new(io::ErrorKind::Other, "mupp"))
         })
     }).map_err(|_|println!("error signal"));
 
