@@ -18,6 +18,7 @@ extern crate futures;
 extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_signal;
+extern crate tokio_timer;
 
 mod history;
 mod telnet_server;
@@ -33,13 +34,15 @@ use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::sync::{Arc, Mutex};
 use std::io;
+use std::time::Duration;
 
 use futures::{Future, Sink, Stream};
+use tokio_signal::unix::Signal;
 
 //use mio::*;
 //use mio::timer::{Timer};
 //use mio::deprecated::{PipeReader};
-use chan_signal::{Signal};
+//use chan_signal::{Signal};
 use termios::*;
 //use log::LogLevel;
 
@@ -93,6 +96,8 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
 
     let history = Rc::new(RefCell::new(History::new(options.history_size)));
 
+    let timer = tokio_timer::Timer::default();
+
     let mut child = child::Process::new(
         options.command.clone(),
         history.clone(),
@@ -104,19 +109,26 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
     }
     let child = Arc::new(Mutex::new(child));
 
-    let terminate = tokio_signal::unix::Signal::new(libc::SIGINT, &handle);
-    let dead_children = tokio_signal::unix::Signal::new(libc::SIGCHLD, &handle);
+    let terminate = Signal::new(libc::SIGINT, &handle);
+    let dead_children = Signal::new(libc::SIGCHLD, &handle);
 
     let sigchld_handling = dead_children.and_then(|signal| {
         println!("got stream of signals");
-        signal.for_each(|signal| {
+        signal.fold(timer, |timer, signal| {
             println!("CHILD DIED {:?}", signal);
             let child = child.clone();
             child.lock().unwrap().wait().unwrap();
             println!("CHILD reaped {:?}", signal);
-            Ok(())
-        })
-    }).map_err(|_|println!("error signal"));
+            let timeout = timer.sleep(Duration::from_millis(1000))
+                .and_then(move |_| {
+                    child.lock().unwrap().spawn().unwrap();
+                    Ok(())
+                }).map(|_|()).map_err(|_|());
+            handle.spawn(timeout);
+            let res: Result<tokio_timer::Timer, io::Error> = Ok(timer);
+            res
+        }).map(|_| ())
+    }).map_err(|_| unimplemented!());
 
     let sigint_handling = terminate.and_then(|signal| {
         println!("got stream of signals");
@@ -134,7 +146,7 @@ fn run(options: Options, _sdone: chan::Sender<()>) {
                 let child = child.clone();
                 println!("restart");
                 //child.lock().unwrap().spawn().expect("failed to spawn..");
-                futures::future::ok(())
+                Ok(())
             })
         }).map_err(|_|());
 
