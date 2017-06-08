@@ -7,9 +7,6 @@ extern crate time;
 extern crate rust_telnet;
 extern crate pty;
 extern crate fd;
-#[macro_use]
-extern crate chan;
-extern crate chan_signal;
 extern crate libc;
 extern crate termios;
 extern crate byteorder;
@@ -62,9 +59,6 @@ fn main() {
     if unsafe{libc::isatty(libc::STDIN_FILENO)} == 1 {
         termios = Some(Termios::from_fd(libc::STDIN_FILENO).unwrap());
     }
-    //let signal = chan_signal::notify(&[Signal::INT, Signal::TERM, Signal::CHLD]);
-
-    let(sdone, rdone) = chan::sync(0);
 
     let options = Options::parse_args();
 
@@ -72,17 +66,8 @@ fn main() {
         panic!("No network binds!");
     }
 
-    //::std::thread::spawn(move || run(options, sdone));
-    run(options, sdone);
+    run(options);
 
-    //chan_select! {
-    //    signal.recv() -> signal => {
-    //        println!("Received signal {:?}, exiting...", signal)
-    //    },
-    //    rdone.recv() => {
-    //        println!("Program completed normally");
-    //    }
-    //}
     // Reset the termios after exiting
     if let Some(ref termios) = termios {
         let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, termios).unwrap();
@@ -90,7 +75,7 @@ fn main() {
 }
 
 
-fn run(options: Options, _sdone: chan::Sender<()>) {
+fn run(options: Options) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let handle = core.handle();
 
