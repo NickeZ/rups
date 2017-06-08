@@ -1,0 +1,7 @@
+[package]
+name = "futures-addition"
+version = "0.1.0"
+authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
+
+[dependencies]
+futures = "0.1"
