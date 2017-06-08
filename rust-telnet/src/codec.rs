@@ -87,7 +87,12 @@ impl codec::Encoder for TelnetCodec {
     type Error = io::Error;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        dst.reserve(item.len());
+        let len = item.len();
+        if dst.remaining_mut() < len {
+            let increase = ::std::cmp::max(dst.capacity(), len);
+            debug!("increasing BytesMut with {} from {}", increase, dst.capacity());
+            dst.reserve(increase);
+        }
         for c in item {
             dst.put(c);
         }
