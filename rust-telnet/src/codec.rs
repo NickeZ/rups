@@ -59,6 +59,7 @@ impl TelnetCodec {
     }
 }
 
+#[derive(Clone)]
 pub enum TelnetIn {
     Text {text:Vec<u8>},
     Carriage,

@@ -14,6 +14,7 @@ use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
 use futures_addition::send_all;
+use futures_addition::rx_wrapper::ReceiverWrapper;
 
 use child;
 
@@ -29,7 +30,7 @@ pub struct TelnetServer {
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
     tx: mpsc::Sender<(SocketAddr, TelnetIn)>,
-    rx: mpsc::Receiver<(SocketAddr, TelnetIn)>,
+    rx: ReceiverWrapper<(SocketAddr, TelnetIn)>,
 }
 
 impl TelnetServer {
@@ -42,7 +43,7 @@ impl TelnetServer {
             noinfo: noinfo,
             listeners: Vec::new(),
             tx: tx,
-            rx: rx,
+            rx: ReceiverWrapper::new(rx),
         }
     }
 
@@ -94,16 +95,18 @@ impl TelnetServer {
             }
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-        let x = child_writers.fold((rx, None), move |acc, writer| {
-            let (rx, last_item) = acc;
+        let x = child_writers.fold(rx, move |rx, writer| {
             // TODO: Figure out a way to put last_item into sink...
-            println!("new writer {:?}", last_item);
+            println!("new writer");
             send_all::new(writer, rx).then(|result| {
-                let (_, rx, reason) = result.unwrap();
+                let (_, mut rx, reason) = result.unwrap();
                 println!("back {:?}", reason);
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
-                    send_all::Reason::SinkEnded{last_item} => Ok((rx, last_item)),
+                    send_all::Reason::SinkEnded{last_item} => {
+                        rx.get_mut().get_mut().undo();
+                        Ok(rx)
+                    },
                 }
             })
         }).map_err(|_|()).map(|_|());
