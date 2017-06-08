@@ -64,52 +64,52 @@ impl TelnetServer {
                 .send_all(from_process)
                 .then(|_| Ok(()));
 
-            if !read_only {
-                // Create a new sender endpoint where this telnet client can
-                // send all its outputs
-                let tx = tx.clone();
-                let reader = reader
-                    .map(move |x| (peer_addr, x))
-                    .filter_map(move |(peer_addr, x)| {
-                        let process = process.clone();
-                        match x {
-                            TelnetIn::Text {text} => {
-                                // TODO: User customized commands
-                                if text.len() == 1 {
-                                    match text[0] {
-                                        0x12 => { // Ctrl-R
-                                            debug!("Receieved relaunch command");
-                                            let mut process = process.lock().unwrap();
-                                            let _ = process.spawn();
-                                            return None
-                                        },
-                                        0x14 => { // Ctrl-T
-                                            debug!("Receieved toggle autorestart command");
-                                            return None
-                                        },
-                                        0x18 => { // Ctrl-X
-                                            debug!("Received kill command");
-                                            let mut process = process.lock().unwrap();
-                                            process.kill().unwrap();
-                                            return None
-                                        },
-                                        _ => return Some(text),
-                                    }
-                                }
-                                return Some(text)
-                            },
-                            TelnetIn::NAWS {rows, columns} => {
-                                process.lock().unwrap().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
-                            },
-                            TelnetIn::Carriage => println!("CR"),
-                        }
-                        None
-                    }).map_err(|_| unimplemented!());
-                let responses = tx.send_all(reader).map_err(|_| ());
-                let server = server.join(responses).map(|_| ());
+            if read_only {
                 handle.spawn(server);
-                return Ok(())
+                return Ok(());
             }
+            // Create a new sender endpoint where this telnet client can
+            // send all its outputs
+            let tx = tx.clone();
+            let reader = reader .filter_map(move |x| {
+                let process = process.clone();
+                match x {
+                    TelnetIn::Text {text} => if text.len() == 1 {
+                        // TODO: User customized commands
+                        match text[0] {
+                            0x12 => { // Ctrl-R
+                                debug!("Receieved relaunch command");
+                                let mut process = process.lock().unwrap();
+                                let _ = process.spawn();
+                                return None
+                            },
+                            0x14 => { // Ctrl-T
+                                debug!("Receieved toggle autorestart command");
+                                return None
+                            },
+                            0x18 => { // Ctrl-X
+                                debug!("Received kill command");
+                                let mut process = process.lock().unwrap();
+                                process.kill().unwrap();
+                                return None
+                            },
+                            _ => return Some(text),
+                        }
+                    },
+                    // TODO: Wrong compiler warning?
+                    TelnetIn::Text {text} => return Some(text),
+                    TelnetIn::NAWS {rows, columns} => {
+                        process.lock().unwrap().set_window_size(
+                            peer_addr,
+                            (From::from(rows), From::from(columns))
+                        );
+                    },
+                    TelnetIn::Carriage => println!("CR"),
+                }
+                None
+            }).map_err(|_| unimplemented!());
+            let responses = tx.send_all(reader).map_err(|_| ());
+            let server = server.join(responses).map(|_| ());
             handle.spawn(server);
             Ok(())
         });
