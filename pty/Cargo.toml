@@ -12,3 +12,6 @@ log = "0.3"
 
 [dev-dependencies]
 env_logger = "0.4"
+
+[dependencies.futures-addition]
+path = "../futures-addition"

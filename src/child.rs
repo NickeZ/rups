@@ -82,15 +82,10 @@ impl Process {
     }
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
-        if let Some(mut child) = self.child.take() {
-            child.kill()?;
-            child.wait()?;
-            drop(child);
+        if self.child.is_some() {
+            panic!("Internal Error, do not use spawn before reaping child");
         }
         let pty = pty::Pty::new();
-        //if self.cid.is_some() {
-        //    return Err(ProcessError::ProcessAlreadySpawned);
-        //}
 
         let mut command = process::Command::new(&self.args[0]);
 
@@ -121,14 +116,6 @@ impl Process {
         };
         Ok(())
     }
-
-    //pub fn respawn(&mut self) -> Result<(), ProcessError> {
-    //    //let input = self.child.as_mut().unwrap().input().take().unwrap();
-    //    //let output = self.child.as_mut().unwrap().output().take().unwrap();
-    //    //mem::replace(&mut *self.stdin.as_ref().unwrap().borrow_mut(), input);
-    //    //mem::replace(&mut *self.stdout.as_ref().unwrap().borrow_mut(), output);
-    //    Ok(())
-    //}
 
     pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
         if let Some(mut child) = self.child.take() {

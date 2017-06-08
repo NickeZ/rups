@@ -3,6 +3,7 @@ extern crate libc;
 extern crate mio;
 extern crate tokio_core;
 #[macro_use] extern crate log;
+extern crate futures_addition;
 
 use std::io::{self, Read, Write};
 use std::os::unix::process::CommandExt;
@@ -15,6 +16,8 @@ use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
 use mio::{Evented, PollOpt, Ready, Token};
 use mio::unix::{EventedFd, UnixReady};
 use tokio_core::reactor::{Handle, PollEvented};
+
+use futures_addition::send_all::HasItem;
 
 #[allow(dead_code)]
 fn printfds(prefix: &str) {
@@ -306,6 +309,27 @@ impl Stream for PtyStream {
     }
 }
 
+#[derive(Debug)]
+pub enum PtySinkError<T> {
+    IoError(io::Error),
+    TryAgain(T),
+}
+
+impl<T> From<io::Error> for PtySinkError<T> {
+    fn from(error: io::Error) -> Self {
+        PtySinkError::IoError(error)
+    }
+}
+
+impl<T> HasItem<T> for PtySinkError<T> {
+    fn item(self) -> Option<T> {
+        match self {
+            PtySinkError::TryAgain(item) => Some(item),
+            _ => None,
+        }
+    }
+}
+
 pub struct PtySink {
     pub ptyin: PtyIo,
     buf: Vec<u8>,
@@ -322,7 +346,7 @@ impl PtySink {
 
 impl Sink for PtySink {
     type SinkItem = Vec<u8>;
-    type SinkError = io::Error;
+    type SinkError = PtySinkError<Self::SinkItem>;
 
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         let orig_len = item.len();
@@ -343,7 +367,8 @@ impl Sink for PtySink {
                         return Ok(AsyncSink::NotReady(item));
                     }
                     warn!("start_send(): Failed to write: {:?}", e);
-                    return Err(e);
+                    //return Err(From::from(e));
+                    return Err(PtySinkError::TryAgain(item));
                 }
             }
         }
@@ -380,7 +405,7 @@ impl Sink for PtySink {
                     if e.kind() != io::ErrorKind::WouldBlock {
                         warn!("poll_complete(): Failed to write: {:?}", e);
                         //res = Ok(Async::Ready(None));
-                        res = Err(e);
+                        res = Err(From::from(e));
                     }
                 },
             }

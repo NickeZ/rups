@@ -13,7 +13,7 @@ use std::io;
 use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
-use send_all;
+use futures_addition::send_all;
 
 use child;
 
@@ -94,14 +94,16 @@ impl TelnetServer {
             }
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
-        let x = child_writers.fold(rx, move |rx, writer| {
-            println!("new writer");
+        let x = child_writers.fold((rx, None), move |acc, writer| {
+            let (rx, last_item) = acc;
+            // TODO: Figure out a way to put last_item into sink...
+            println!("new writer {:?}", last_item);
             send_all::new(writer, rx).then(|result| {
                 let (_, rx, reason) = result.unwrap();
                 println!("back {:?}", reason);
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
-                    send_all::Reason::SinkEnded => Ok(rx),
+                    send_all::Reason::SinkEnded{last_item} => Ok((rx, last_item)),
                 }
             })
         }).map_err(|_|()).map(|_|());

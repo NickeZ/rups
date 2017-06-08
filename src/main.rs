@@ -16,13 +16,13 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate tokio_signal;
 extern crate tokio_timer;
+extern crate futures_addition;
 
 mod history;
 mod telnet_server;
 //mod telnet_client;
 mod child;
 mod options;
-mod send_all;
 
 //use std::io::prelude::*;
 //use std::os::unix::io::{FromRawFd};
@@ -104,6 +104,7 @@ fn run(options: Options) {
             println!("CHILD reaped {:?}", signal);
             let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                 .and_then(move |_| {
+                    println!("Time to spawn new child");
                     child.lock().unwrap().spawn().unwrap();
                     Ok(())
                 }).map(|_|()).map_err(|_|());

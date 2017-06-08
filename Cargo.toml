@@ -29,3 +29,6 @@ path = "pty"
 
 [dependencies.rust-telnet]
 path = "rust-telnet"
+
+[dependencies.futures-addition]
+path = "futures-addition"

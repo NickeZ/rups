@@ -30,20 +30,8 @@ pub enum Reason<T> {
 }
 
 pub trait HasItem<T> {
-    fn item(&self) -> Option<T>;
+    fn item(self) -> Option<T>;
 }
-
-//#[derive(Debug)]
-//pub enum SendAllError<T, U> {
-//    TryAgain(T),
-//    Other(U),
-//}
-
-//impl<T, U> From<U> for SendAllError<T, U> {
-//    fn from(other: U) -> Self {
-//        SendAllError::Other(other)
-//    }
-//}
 
 impl<T, U> SendAll<T, U>
     where T: Sink,
