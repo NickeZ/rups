@@ -2,7 +2,6 @@
 fn it_works() {
 }
 
-
 use std::{io, str};
 use std::io::Cursor;
 
@@ -77,7 +76,7 @@ impl codec::Decoder for TelnetCodec {
             return Ok(None);
         }
         let (res, remainder_len) = self.decoder.decode(src.as_ref());
-        println!("Will drain {} from {}", len - remainder_len, len);
+        debug!("Will drain {} from {}", len - remainder_len, len);
         src.split_to(len - remainder_len);
         res
     }
@@ -88,6 +87,7 @@ impl codec::Encoder for TelnetCodec {
     type Error = io::Error;
 
     fn encode(&mut self, item: Self::Item, dst: &mut BytesMut) -> Result<(), Self::Error> {
+        dst.reserve(item.len());
         for c in item {
             dst.put(c);
         }
@@ -140,7 +140,7 @@ impl Decoder {
                                 _ => (),
                             }
                         },
-                        command => println!("unhandled command {:?}", command),
+                        command => warn!("unhandled command {:?}", command),
                     }
                 },
                 TelnetToken::Negotiation{command, channel} => {
@@ -148,7 +148,7 @@ impl Decoder {
                         (IAC::SB, OPTION::NAWS) => {
                             self.mode = TelnetCodecMode::NAWS;
                         },
-                        (_, _) => println!("unhandled negotiation {:?} {:?}", command, channel),
+                        (_, _) => warn!("unhandled negotiation {:?} {:?}", command, channel),
                     }
                 },
             }

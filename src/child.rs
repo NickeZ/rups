@@ -125,7 +125,7 @@ impl Process {
     }
 
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
-        println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
+        //println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
         self.window_sizes.insert(addr, ws);
         let mut min_ws = (From::from(u16::max_value()), From::from(u16::max_value()));
         for (_, ws) in &self.window_sizes {

@@ -197,18 +197,18 @@ pub struct Child {
 
 impl Child {
     pub fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
-        println!("wait for child");
+        trace!("wait for child");
         //self.sink_done.take().unwrap().send(1).unwrap();
         //self.stream_done.take().unwrap().send(1).unwrap();
         let sink = self.sink_done.take().unwrap();
         match sink.send(1) {
-            Ok(()) => debug!("killing sink"),
-            Err(e) => debug!("sink already deallocated {:?}", e),
+            Ok(()) => trace!("killing sink"),
+            Err(e) => trace!("sink already deallocated {:?}", e),
         }
         let stream = self.stream_done.take().unwrap();
         match stream.send(1) {
-            Ok(()) => debug!("killing stream"),
-            Err(e) => debug!("stream already deallocated {:?}", e),
+            Ok(()) => trace!("killing stream"),
+            Err(e) => trace!("stream already deallocated {:?}", e),
         }
         self.inner.wait()
     }

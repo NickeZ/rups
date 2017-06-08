@@ -1,6 +1,8 @@
 extern crate byteorder;
 extern crate tokio_io;
 extern crate bytes;
+#[macro_use]
+extern crate log;
 
 pub mod carrier;
 

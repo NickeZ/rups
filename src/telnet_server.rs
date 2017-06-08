@@ -96,11 +96,8 @@ impl TelnetServer {
             None
         }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
         let x = child_writers.fold(rx, move |rx, writer| {
-            // TODO: Figure out a way to put last_item into sink...
-            println!("new writer");
             send_all::new(writer, rx).then(|result| {
                 let (_, mut rx, reason) = result.unwrap();
-                println!("back {:?}", reason);
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
                     send_all::Reason::SinkEnded{last_item} => {
