@@ -12,7 +12,8 @@ use std::ptr;
 use std::process;
 use std::fs;
 
-use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll};
+use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll, Future};
+use futures::sync::oneshot;
 use mio::{Evented, PollOpt, Ready, Token};
 use mio::unix::{EventedFd, UnixReady};
 use tokio_core::reactor::{Handle, PollEvented};
@@ -159,17 +160,27 @@ impl Pty {
             printfds("parent after fork");
         }
 
+        let (stream_done_tx, stream_done_rx) = oneshot::channel::<i32>();
         let io = stdio(master, handle);
-        let output = PtyStream::new(io.expect("Failed to create EventedFd for output").unwrap());
+        let output = PtyStream::new(
+            io.expect("Failed to create EventedFd for output").unwrap(),
+            stream_done_rx,
+        );
 
+        let (sink_done_tx, sink_done_rx) = oneshot::channel::<i32>();
         let io = stdio(master2, handle);
-        let input = PtySink::new(io.expect("Failed to create EventedFd for input").unwrap());
+        let input = PtySink::new(
+            io.expect("Failed to create EventedFd for input").unwrap(),
+            sink_done_rx
+        );
 
         let child = Child {
             inner: child,
             master: (master, master2),
             input: Some(input),
             output: Some(output),
+            sink_done: Some(sink_done_tx),
+            stream_done: Some(stream_done_tx),
         };
         Ok(child)
     }
@@ -180,10 +191,25 @@ pub struct Child {
     master: (RawFd, RawFd),
     input: Option<PtySink>,
     output: Option<PtyStream>,
+    sink_done: Option<oneshot::Sender<i32>>,
+    stream_done: Option<oneshot::Sender<i32>>,
 }
 
 impl Child {
     pub fn wait(&mut self) -> io::Result<std::process::ExitStatus> {
+        println!("wait for child");
+        //self.sink_done.take().unwrap().send(1).unwrap();
+        //self.stream_done.take().unwrap().send(1).unwrap();
+        let sink = self.sink_done.take().unwrap();
+        match sink.send(1) {
+            Ok(()) => debug!("killing sink"),
+            Err(e) => debug!("sink already deallocated {:?}", e),
+        }
+        let stream = self.stream_done.take().unwrap();
+        match stream.send(1) {
+            Ok(()) => debug!("killing stream"),
+            Err(e) => debug!("stream already deallocated {:?}", e),
+        }
         self.inner.wait()
     }
 
@@ -266,12 +292,14 @@ pub fn set_winsize(fd: RawFd, ws: &libc::winsize) -> io::Result<()> {
 
 pub struct PtyStream {
     ptyio: PtyIo,
+    done: oneshot::Receiver<i32>,
 }
 
 impl PtyStream {
-    pub fn new(ptyio: PtyIo) -> PtyStream {
+    pub fn new(ptyio: PtyIo, done: oneshot::Receiver<i32>) -> PtyStream {
         PtyStream {
             ptyio: ptyio,
+            done: done,
         }
     }
 }
@@ -282,6 +310,10 @@ impl Stream for PtyStream {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
         let mut buf = [0 as u8;2048];
+        match self.done.poll() {
+            Ok(Async::Ready(t)) => return Err(io::Error::new(io::ErrorKind::Other, "died")),
+            _ => (),
+        }
         match self.ptyio.read(&mut buf) {
             Ok(len) => {
                 trace!("Read {} bytes from {:?}", len, self.ptyio);
@@ -333,13 +365,15 @@ impl<T> HasItem<T> for PtySinkError<T> {
 pub struct PtySink {
     pub ptyin: PtyIo,
     buf: Vec<u8>,
+    done: oneshot::Receiver<i32>,
 }
 
 impl PtySink {
-    pub fn new(ptyin: PtyIo) -> PtySink {
+    pub fn new(ptyin: PtyIo, done: oneshot::Receiver<i32>) -> PtySink {
         PtySink {
             ptyin: ptyin,
             buf: Vec::new(),
+            done: done,
         }
     }
 }
@@ -353,6 +387,10 @@ impl Sink for PtySink {
         let written_len;
         if orig_len == 0 {
             return Ok(AsyncSink::Ready);
+        }
+        match self.done.poll() {
+            Ok(Async::Ready(t)) => return Err(PtySinkError::TryAgain(item)),
+            _ => (),
         }
         {
             match self.ptyin.write(item.as_slice()) {
