@@ -311,7 +311,7 @@ impl Stream for PtyStream {
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
         let mut buf = [0 as u8;2048];
         match self.done.poll() {
-            Ok(Async::Ready(t)) => return Err(io::Error::new(io::ErrorKind::Other, "died")),
+            Ok(Async::Ready(..)) => return Err(io::Error::new(io::ErrorKind::Other, "died")),
             _ => (),
         }
         match self.ptyio.read(&mut buf) {
@@ -389,7 +389,7 @@ impl Sink for PtySink {
             return Ok(AsyncSink::Ready);
         }
         match self.done.poll() {
-            Ok(Async::Ready(t)) => return Err(PtySinkError::TryAgain(item)),
+            Ok(Async::Ready(..)) => return Err(PtySinkError::TryAgain(item)),
             _ => (),
         }
         {
