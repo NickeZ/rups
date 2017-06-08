@@ -28,6 +28,7 @@ pub fn new<T, U>(sink: T, stream: U) -> SendAll<T, U>
     }
 }
 
+#[derive(Debug)]
 pub enum Reason {
     StreamEnded,
     SinkEnded,
@@ -87,6 +88,7 @@ impl<T, U> Future for SendAll<T, U>
                         Ok(Async::Ready(t)) => t,
                         Ok(Async::NotReady) => return Ok(Async::NotReady),
                         Err(e) => {
+                            println!("sink ended");
                             try_ready!(self.sink_mut().close());
                             return Ok(Async::Ready(self.take_result(Reason::SinkEnded)))
                         },
@@ -94,6 +96,7 @@ impl<T, U> Future for SendAll<T, U>
                 },
                 Async::Ready(None) => {
                     try_ready!(self.sink_mut().close());
+                    println!("stream ended");
                     return Ok(Async::Ready(self.take_result(Reason::StreamEnded)))
                 }
                 Async::NotReady => {

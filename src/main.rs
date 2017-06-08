@@ -39,7 +39,6 @@ use tokio_signal::unix::Signal;
 //use mio::*;
 //use mio::timer::{Timer};
 //use mio::deprecated::{PipeReader};
-//use chan_signal::{Signal};
 use termios::*;
 //use log::LogLevel;
 
@@ -47,10 +46,6 @@ use history::*;
 //use telnet_server::*;
 use child::{ProcessReaders, ProcessWriters};
 use options::Options;
-
-//fn push_info(history:&Rc<RefCell<History>>, message:String) {
-//    history.borrow_mut().push(HistoryLine::Info{message: message});
-//}
 
 fn main() {
     env_logger::init().unwrap();
@@ -97,6 +92,9 @@ fn run(options: Options) {
     let terminate = Signal::new(libc::SIGINT, &handle);
     let dead_children = Signal::new(libc::SIGCHLD, &handle);
 
+    let sec = options.holdoff.floor();
+    let nsec = (options.holdoff - sec) * 1_000_000_000f64;
+
     let sigchld_handling = dead_children.and_then(|signal| {
         println!("got stream of signals");
         signal.fold(timer, |timer, signal| {
@@ -104,7 +102,7 @@ fn run(options: Options) {
             let child = child.clone();
             child.lock().unwrap().wait().unwrap();
             println!("CHILD reaped {:?}", signal);
-            let timeout = timer.sleep(Duration::from_millis(1000))
+            let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                 .and_then(move |_| {
                     child.lock().unwrap().spawn().unwrap();
                     Ok(())
@@ -126,10 +124,11 @@ fn run(options: Options) {
     let child_readers = ProcessReaders::new(child.clone());
     let proc_output = child_readers
         .for_each(|reader| {
+            println!("new readeR");
             let hw = HistoryWriter::new(history.clone());
             hw.send_all(reader).map(|_|()).or_else(|_|{
                 let child = child.clone();
-                println!("restart");
+                println!("hw.send_all returned");
                 //child.lock().unwrap().spawn().expect("failed to spawn..");
                 Ok(())
             })

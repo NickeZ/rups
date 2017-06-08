@@ -12,7 +12,7 @@ use std::io;
 use std::mem;
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
-use futures::task::Task;
+use futures::task::{self, Task};
 
 use libc;
 
@@ -54,6 +54,8 @@ pub struct Process {
     //stdin: PipeWriter,
     //stdout: PipeReader,
     handle: Handle,
+    pr_task: Option<Task>,
+    pw_task: Option<Task>,
 }
 
 impl Process {
@@ -74,6 +76,8 @@ impl Process {
             //stdin: stdin,
             //stdout: stdout,
             handle: handle,
+            pr_task: None,
+            pw_task: None,
         }
     }
 
@@ -102,6 +106,12 @@ impl Process {
                 self.child = Some(child);
                 self.stdin = Some(self.child.as_mut().unwrap().input().take().unwrap());
                 self.stdout = Some(self.child.as_mut().unwrap().output().take().unwrap());
+                if let Some(task) = self.pr_task.take() {
+                    task.unpark();
+                }
+                if let Some(task) = self.pw_task.take() {
+                    task.unpark();
+                }
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
                 //    HistoryType::Info,
@@ -142,6 +152,14 @@ impl Process {
         if let Some(ref mut child) = self.child {
             child.set_window_size(min_ws.0, min_ws.1);
         }
+    }
+
+    pub fn set_pr_task(&mut self, task: Task) {
+        self.pr_task = Some(task);
+    }
+
+    pub fn set_pw_task(&mut self, task: Task) {
+        self.pw_task = Some(task);
     }
 
     //pub fn split(self) -> Result<(ProcessWriters, ProcessReaders), ()> {
@@ -250,6 +268,7 @@ impl Stream for ProcessWriters {
         if let Some(stdin) = self.inner.lock().unwrap().stdin.take() {
             return Ok(Async::Ready(Some(stdin)));
         }
+        self.inner.lock().unwrap().set_pw_task(task::park());
         Ok(Async::NotReady)
     }
 }
@@ -274,6 +293,7 @@ impl Stream for ProcessReaders {
         if let Some(stdout) = self.inner.lock().unwrap().stdout.take() {
             return Ok(Async::Ready(Some(stdout)));
         }
+        self.inner.lock().unwrap().set_pr_task(task::park());
         Ok(Async::NotReady)
     }
 }
