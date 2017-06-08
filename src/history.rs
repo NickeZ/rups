@@ -53,7 +53,7 @@ impl History {
             self.offset += 1;
         }
         self.buffers.push_back(line);
-        debug!("buffers are now: {:?}", self.buffers);
+        //debug!("buffers are now: {:?}", self.buffers);
     }
 
     pub fn get_from(&self, index:usize) -> ::std::iter::Skip<::std::collections::vec_deque::Iter<HistoryLine>> {

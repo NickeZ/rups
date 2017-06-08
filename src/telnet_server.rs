@@ -29,8 +29,8 @@ pub struct TelnetServer {
     history: Rc<RefCell<History>>,
     noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
-    tx: mpsc::Sender<(SocketAddr, TelnetIn)>,
-    rx: ReceiverWrapper<(SocketAddr, TelnetIn)>,
+    tx: mpsc::Sender<Vec<u8>>,
+    rx: ReceiverWrapper<Vec<u8>>,
 }
 
 impl TelnetServer {
@@ -52,9 +52,11 @@ impl TelnetServer {
         println!("Listening on Port {}", addr);
         let history = self.history.clone();
         let tx = self.tx.clone();
+        let process = self.process.clone();
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
+            let process = process.clone();
 
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
@@ -66,9 +68,44 @@ impl TelnetServer {
                 // Create a new sender endpoint where this telnet client can
                 // send all its outputs
                 let tx = tx.clone();
-                let responses = tx.send_all(
-                    reader.map(move |x| (peer_addr, x)).map_err(|_| unimplemented!())
-                ).map_err(|_| ());
+                let reader = reader
+                    .map(move |x| (peer_addr, x))
+                    .filter_map(move |(peer_addr, x)| {
+                        let process = process.clone();
+                        match x {
+                            TelnetIn::Text {text} => {
+                                // TODO: User customized commands
+                                if text.len() == 1 {
+                                    match text[0] {
+                                        0x12 => { // Ctrl-R
+                                            debug!("Receieved relaunch command");
+                                            let mut process = process.lock().unwrap();
+                                            let _ = process.spawn();
+                                            return None
+                                        },
+                                        0x14 => { // Ctrl-T
+                                            debug!("Receieved toggle autorestart command");
+                                            return None
+                                        },
+                                        0x18 => { // Ctrl-X
+                                            debug!("Received kill command");
+                                            let mut process = process.lock().unwrap();
+                                            process.kill().unwrap();
+                                            return None
+                                        },
+                                        _ => return Some(text),
+                                    }
+                                }
+                                return Some(text)
+                            },
+                            TelnetIn::NAWS {rows, columns} => {
+                                process.lock().unwrap().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
+                            },
+                            TelnetIn::Carriage => println!("CR"),
+                        }
+                        None
+                    }).map_err(|_| unimplemented!());
+                let responses = tx.send_all(reader).map_err(|_| ());
                 let server = server.join(responses).map(|_| ());
                 handle.spawn(server);
                 return Ok(())
@@ -83,25 +120,14 @@ impl TelnetServer {
         let child_writers = child::ProcessWriters::new(self.process.clone());
         let process = self.process.clone();
         let rx = self.rx;
-        let rx = rx.filter_map(move |(peer_addr, x)| {
-            match x {
-                TelnetIn::Text {text} => {
-                    return Some(text)
-                },
-                TelnetIn::NAWS {rows, columns} => {
-                    process.lock().unwrap().set_window_size(peer_addr, (From::from(rows), From::from(columns)));
-                },
-                TelnetIn::Carriage => println!("CR"),
-            }
-            None
-        }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
+        let rx = rx.map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
         let x = child_writers.fold(rx, move |rx, writer| {
             send_all::new(writer, rx).then(|result| {
                 let (_, mut rx, reason) = result.unwrap();
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
                     send_all::Reason::SinkEnded{last_item} => {
-                        rx.get_mut().get_mut().undo();
+                        rx.get_mut().undo();
                         Ok(rx)
                     },
                 }

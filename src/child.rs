@@ -83,7 +83,7 @@ impl Process {
 
     pub fn spawn(&mut self) -> Result<(), ProcessError> {
         if self.child.is_some() {
-            panic!("Internal Error, do not use spawn before reaping child");
+            return Err(ProcessError::ProcessAlreadySpawned);
         }
         let pty = pty::Pty::new();
 
@@ -120,6 +120,13 @@ impl Process {
     pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
         if let Some(mut child) = self.child.take() {
             return child.wait().map_err(|e| From::from(e));
+        }
+        Err(ProcessError::NoChild)
+    }
+
+    pub fn kill(&mut self) -> Result<(), ProcessError> {
+        if let Some(ref mut child) = self.child {
+            return child.kill().map_err(|e| From::from(e))
         }
         Err(ProcessError::NoChild)
     }
