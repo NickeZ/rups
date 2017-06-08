@@ -20,20 +20,20 @@ use child;
 pub struct TelnetServer {
     process: Arc<Mutex<child::Process>>,
     history: Rc<RefCell<History>>,
-    noinfo: bool,
+    //noinfo: bool,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
     tx: mpsc::Sender<Vec<u8>>,
     rx: ReceiverWrapper<Vec<u8>>,
 }
 
 impl TelnetServer {
-    pub fn new(history: Rc<RefCell<History>>, process: Arc<Mutex<child::Process>>, noinfo: bool) -> TelnetServer {
+    pub fn new(history: Rc<RefCell<History>>, process: Arc<Mutex<child::Process>>, _noinfo: bool) -> TelnetServer {
         // Create a channel for all telnet clients to put their data
         let (tx, rx) = mpsc::channel(2048);
         TelnetServer {
             process: process,
             history: history,
-            noinfo: noinfo,
+            //noinfo: noinfo,
             listeners: Vec::new(),
             tx: tx,
             rx: ReceiverWrapper::new(rx),
