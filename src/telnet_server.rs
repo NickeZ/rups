@@ -5,8 +5,7 @@ use std::net::{SocketAddr};
 use tokio_core::reactor;
 use tokio_core::net::{TcpListener};
 use tokio_io::AsyncRead;
-use futures::{self, Stream, Sink, Future, BoxFuture};
-use futures::stream::{BoxStream, once};
+use futures::{self, Stream, Sink, Future};
 use futures::sync::mpsc;
 use std::io;
 
@@ -17,12 +16,6 @@ use futures_addition::send_all;
 use futures_addition::rx_wrapper::ReceiverWrapper;
 
 use child;
-
-//#[derive(PartialEq, Copy, Clone)]
-//pub enum BindKind {
-//    Control,
-//    Log,
-//}
 
 pub struct TelnetServer {
     process: Arc<Mutex<child::Process>>,
@@ -47,6 +40,8 @@ impl TelnetServer {
         }
     }
 
+    // It is reachable...
+    #[allow(unreachable_patterns)]
     pub fn bind(&mut self, addr: &SocketAddr, handle: reactor::Handle, read_only: bool) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
         println!("Listening on Port {}", addr);
@@ -64,14 +59,14 @@ impl TelnetServer {
                 .send_all(from_process)
                 .then(|_| Ok(()));
 
+            // Return early if the client is bound to a read only port
             if read_only {
                 handle.spawn(server);
                 return Ok(());
             }
-            // Create a new sender endpoint where this telnet client can
-            // send all its outputs
-            let tx = tx.clone();
-            let reader = reader .filter_map(move |x| {
+
+            // Filter out commands from telnet client
+            let reader = reader.filter_map(move |x| {
                 let process = process.clone();
                 match x {
                     TelnetIn::Text {text} => if text.len() == 1 {
@@ -108,6 +103,10 @@ impl TelnetServer {
                 }
                 None
             }).map_err(|_| unimplemented!());
+
+            // Create a new sender endpoint where this telnet client can
+            // send all its outputs
+            let tx = tx.clone();
             let responses = tx.send_all(reader).map_err(|_| ());
             let server = server.join(responses).map(|_| ());
             handle.spawn(server);
@@ -118,15 +117,13 @@ impl TelnetServer {
 
     pub fn server(self, handle: reactor::Handle) -> Box<Future<Item=(), Error=()>>{
         let child_writers = child::ProcessWriters::new(self.process.clone());
-        let process = self.process.clone();
-        let rx = self.rx;
-        let rx = rx.map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
+        let rx = self.rx.map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"));
         let x = child_writers.fold(rx, move |rx, writer| {
             send_all::new(writer, rx).then(|result| {
                 let (_, mut rx, reason) = result.unwrap();
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
-                    send_all::Reason::SinkEnded{last_item} => {
+                    send_all::Reason::SinkEnded{..} => {
                         rx.get_mut().undo();
                         Ok(rx)
                     },

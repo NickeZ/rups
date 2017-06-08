@@ -2,19 +2,13 @@ use std::process;
 use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::sync::{Arc, Mutex};
-//use std::io::prelude::*;
-//use std::io::{self};
-//use std::os::unix::io::{FromRawFd, AsRawFd};
 use std::error::{Error};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::io;
-use std::mem;
 
-use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
+use futures::{Stream, Poll, Async};
 use futures::task::{self, Task};
-
-use libc;
 
 use pty;
 use tokio_core::reactor::Handle;

@@ -10,7 +10,6 @@ extern crate fd;
 extern crate libc;
 extern crate termios;
 extern crate byteorder;
-#[macro_use]
 extern crate futures;
 extern crate tokio_core;
 extern crate tokio_io;
@@ -44,7 +43,7 @@ use termios::*;
 
 use history::*;
 //use telnet_server::*;
-use child::{ProcessReaders, ProcessWriters};
+use child::ProcessReaders;
 use options::Options;
 
 fn main() {
@@ -126,7 +125,6 @@ fn run(options: Options) {
         .for_each(|reader| {
             let hw = HistoryWriter::new(history.clone());
             hw.send_all(reader).map(|_|()).or_else(|_|{
-                let child = child.clone();
                 Ok(())
             })
         }).map_err(|_|());
