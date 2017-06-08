@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
-use futures::task::Task;
+use futures::task::{self, Task};
 
 use rust_telnet::codec::{IAC, OPTION};
 
@@ -43,7 +43,7 @@ impl History {
 
     pub fn unpark(&mut self) {
         for task in self.tasks.drain(..) {
-            task.unpark();
+            task.notify();
         }
     }
 
@@ -152,7 +152,7 @@ impl Stream for HistoryReader {
         if res.len() > 0 {
             Ok(Async::Ready(Some(res)))
         } else {
-            let task = ::futures::task::park();
+            let task = task::current();
             //println!("{:?}", task);
             history.park(task);
             Ok(Async::NotReady)

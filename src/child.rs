@@ -102,10 +102,10 @@ impl Process {
                 self.stdin = Some(self.child.as_mut().unwrap().input().take().unwrap());
                 self.stdout = Some(self.child.as_mut().unwrap().output().take().unwrap());
                 if let Some(task) = self.pr_task.take() {
-                    task.unpark();
+                    task.notify();
                 }
                 if let Some(task) = self.pw_task.take() {
-                    task.unpark();
+                    task.notify();
                 }
                 //self.cid = Some(p.id());
                 //self.history.borrow_mut().push(
@@ -255,7 +255,7 @@ impl Stream for ProcessWriters {
         if let Some(stdin) = self.inner.lock().unwrap().stdin.take() {
             return Ok(Async::Ready(Some(stdin)));
         }
-        self.inner.lock().unwrap().set_pw_task(task::park());
+        self.inner.lock().unwrap().set_pw_task(task::current());
         Ok(Async::NotReady)
     }
 }
@@ -280,7 +280,7 @@ impl Stream for ProcessReaders {
         if let Some(stdout) = self.inner.lock().unwrap().stdout.take() {
             return Ok(Async::Ready(Some(stdout)));
         }
-        self.inner.lock().unwrap().set_pr_task(task::park());
+        self.inner.lock().unwrap().set_pr_task(task::current());
         Ok(Async::NotReady)
     }
 }
