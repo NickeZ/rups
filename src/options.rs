@@ -166,6 +166,10 @@ impl Options {
             }
         }
 
+        if options.killcmd == options.togglecmd || options.killcmd == options.restartcmd || options.togglecmd == options.restartcmd {
+            panic!("It is not allowed to have the same shortcut for multiple commands");
+        }
+
         options
     }
 

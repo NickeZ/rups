@@ -98,18 +98,19 @@ impl TelnetServer {
                             let mut process = process.lock().unwrap();
                             let _ = process.spawn();
                             return None
-                        } else if cmd == togglecmd {
+                        }
+                        if cmd == togglecmd {
                             options.borrow_mut().toggle_autorestart();
                             debug!("Receieved toggle autorestart command");
                             return None
-                        } else if cmd == killcmd {
+                        }
+                        if cmd == killcmd {
                             debug!("Received kill command");
                             let mut process = process.lock().unwrap();
                             process.kill().unwrap();
                             return None
-                        } else {
-                            return Some(text)
                         }
+                        return Some(text)
                     },
                     // TODO: Wrong compiler warning?
                     TelnetIn::Text {text} => return Some(text),
