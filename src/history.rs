@@ -1,17 +1,17 @@
 use std::io;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::vec_deque::Iter;
 use std::collections::VecDeque;
+use std::iter::Skip;
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
 use futures::task::{self, Task};
 
-use rust_telnet::codec::{IAC, OPTION};
-
 #[derive(Debug, PartialEq)]
 pub enum HistoryLine {
     Child {message: Vec<u8>},
-    Command (Vec<u8>),
+    //Command (Vec<u8>),
     //Info {message: String},
 }
 
@@ -24,11 +24,7 @@ pub struct History {
 
 impl History {
     pub fn new(histsize:usize) -> History {
-        let mut buf = VecDeque::with_capacity(histsize);
-        // TODO(nc): This works until the buffer has been filled...
-        buf.push_back(HistoryLine::Command(vec![IAC::IAC, IAC::WILL, OPTION::ECHO]));
-        buf.push_back(HistoryLine::Command(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]));
-        buf.push_back(HistoryLine::Command(vec![IAC::IAC, IAC::DO, OPTION::NAWS]));
+        let buf = VecDeque::with_capacity(histsize);
         History {
             buffers: buf,
             histsize: histsize,
@@ -53,10 +49,10 @@ impl History {
             self.offset += 1;
         }
         self.buffers.push_back(line);
-        //debug!("buffers are now: {:?}", self.buffers);
+        trace!("buffers are now: {:?}", self.buffers);
     }
 
-    pub fn get_from(&self, index:usize) -> ::std::iter::Skip<::std::collections::vec_deque::Iter<HistoryLine>> {
+    pub fn get_from(&self, index:usize) -> Skip<Iter<HistoryLine>> {
         let idx = if index < self.offset {
             0
         } else {
@@ -69,14 +65,6 @@ impl History {
     pub fn get_offset(&self) -> usize {
         self.offset
     }
-
-    //pub fn writer(&self) -> HistoryWriter {
-    //    HistoryWriter::new(self)
-    //}
-
-    //pub fn reader(&self) -> HistoryReader {
-    //    HistoryReader::new(self)
-    //}
 }
 
 pub struct HistoryWriter {
@@ -132,19 +120,17 @@ impl Stream for HistoryReader {
             self.first = false;
             self.index = history.get_offset();
         }
-        //println!("poll1 {:?}", self.index);
         let mut res = Vec::new();
         for entry in history.get_from(self.index) {
-            //println!("poll2 {:?}", entry);
             match entry {
                 &HistoryLine::Child{ref message} => {
                     let mut content = message.clone();
                     res.append(&mut content);
                 },
-                &HistoryLine::Command(ref cmd) => {
-                    let mut content = cmd.clone();
-                    res.append(&mut content);
-                },
+                //&HistoryLine::Command(ref cmd) => {
+                //    let mut content = cmd.clone();
+                //    res.append(&mut content);
+                //},
                 //e => println!("unkonwn entry {:?}", e),
             }
             self.index = self.index + 1;
@@ -153,10 +139,8 @@ impl Stream for HistoryReader {
             Ok(Async::Ready(Some(res)))
         } else {
             let task = task::current();
-            //println!("{:?}", task);
             history.park(task);
             Ok(Async::NotReady)
         }
     }
-
 }

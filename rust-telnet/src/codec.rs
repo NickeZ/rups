@@ -103,6 +103,7 @@ impl codec::Encoder for TelnetCodec {
 struct Decoder {
     tokenizer: TelnetTokenizer,
     mode: TelnetCodecMode,
+    server_echo: bool,
 }
 
 impl Decoder {
@@ -110,6 +111,7 @@ impl Decoder {
         Decoder {
             tokenizer: TelnetTokenizer::new(),
             mode: TelnetCodecMode::Text,
+            server_echo: false,
         }
     }
 
@@ -138,6 +140,7 @@ impl Decoder {
                 TelnetToken::Command(command) => {
                     match command {
                         IAC::SE => {
+                            debug!("RX: Negotiation SE");
                             match self.mode {
                                 TelnetCodecMode::NAWS => {
                                     self.mode = TelnetCodecMode::Text;
@@ -150,7 +153,25 @@ impl Decoder {
                 },
                 TelnetToken::Negotiation{command, channel} => {
                     match (command, channel) {
+                        (IAC::DO, OPTION::ECHO) => {
+                            debug!("RX: Negotiation DO ECHO");
+                            self.server_echo = true
+                        },
+                        (IAC::DONT, OPTION::ECHO) => {
+                            debug!("RX: Negotiation DONT ECHO");
+                            self.server_echo = false
+                        },
+                        (IAC::DO, OPTION::SUPPRESS_GO_AHEAD) => {
+                            debug!("RX: Negotiation DO SUPPRESS_GO_AHEAD");
+                        },
+                        (IAC::DONT, OPTION::SUPPRESS_GO_AHEAD) => {
+                            debug!("RX: Negotiation DONT SUPPRESS_GO_AHEAD");
+                        },
+                        (IAC::WILL, OPTION::NAWS) => {
+                            debug!("RX: Negotiation WILL NAWS");
+                        },
                         (IAC::SB, OPTION::NAWS) => {
+                            debug!("RX: Negotiation SB NAWS");
                             self.mode = TelnetCodecMode::NAWS;
                         },
                         (_, _) => warn!("unhandled negotiation {:?} {:?}", command, channel),

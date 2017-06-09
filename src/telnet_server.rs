@@ -7,11 +7,14 @@ use tokio_core::net::{TcpListener};
 use tokio_io::AsyncRead;
 use futures::{self, Stream, Sink, Future};
 use futures::sync::mpsc;
+use futures::stream;
 use std::io;
+use std::vec::IntoIter;
 
 use history::{History, HistoryReader};
 
 use rust_telnet::codec::{TelnetCodec, TelnetIn};
+use rust_telnet::codec::{IAC, OPTION};
 use futures_addition::send_all;
 use futures_addition::rx_wrapper::ReceiverWrapper;
 
@@ -56,7 +59,8 @@ impl TelnetServer {
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
             let server = writer
-                .send_all(from_process)
+                .send_all(init_commands())
+                .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
             // Return early if the client is bound to a read only port
@@ -134,4 +138,10 @@ impl TelnetServer {
         handle.spawn(server);
         Box::new(x)
     }
+}
+
+fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
+    stream::iter(vec![Ok(vec![IAC::IAC, IAC::WILL, OPTION::ECHO]),
+                      Ok(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]),
+                      Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
 }
