@@ -50,8 +50,6 @@ impl TelnetServer {
         }
     }
 
-    // It is reachable...
-    #[allow(unreachable_patterns)]
     pub fn bind(&mut self, addr: &SocketAddr, handle: reactor::Handle, read_only: bool) {
         let listener = TcpListener::bind(addr, &handle).unwrap();
         println!("Listening on Port {}", addr);
@@ -90,30 +88,30 @@ impl TelnetServer {
                 let process = process.clone();
                 let options = options.clone();
                 match x {
-                    TelnetIn::Text {text} => if text.len() == 1 {
-                        trace!("Received {:?}", text);
-                        let cmd = text[0];
-                        if cmd == restartcmd {
-                            debug!("Receieved relaunch command");
-                            let mut process = process.lock().unwrap();
-                            let _ = process.spawn();
-                            return None
-                        }
-                        if cmd == togglecmd {
-                            options.borrow_mut().toggle_autorestart();
-                            debug!("Receieved toggle autorestart command");
-                            return None
-                        }
-                        if cmd == killcmd {
-                            debug!("Received kill command");
-                            let mut process = process.lock().unwrap();
-                            process.kill().unwrap();
-                            return None
+                    TelnetIn::Text {text} => {
+                        if text.len() == 1 {
+                            trace!("Received {:?}", text);
+                            let cmd = text[0];
+                            if cmd == restartcmd {
+                                debug!("Receieved relaunch command");
+                                let mut process = process.lock().unwrap();
+                                let _ = process.spawn();
+                                return None
+                            }
+                            if cmd == togglecmd {
+                                options.borrow_mut().toggle_autorestart();
+                                debug!("Receieved toggle autorestart command");
+                                return None
+                            }
+                            if cmd == killcmd {
+                                debug!("Received kill command");
+                                let mut process = process.lock().unwrap();
+                                process.kill().unwrap();
+                                return None
+                            }
                         }
                         return Some(text)
                     },
-                    // TODO: Wrong compiler warning?
-                    TelnetIn::Text {text} => return Some(text),
                     TelnetIn::NAWS {rows, columns} => {
                         process.lock().unwrap().set_window_size(
                             peer_addr,
