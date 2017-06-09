@@ -144,8 +144,10 @@ impl TelnetServer {
                 let (_, mut rx, reason) = result.unwrap();
                 match reason {
                     send_all::Reason::StreamEnded => Err(io::Error::new(io::ErrorKind::Other, "stream ended")),
-                    send_all::Reason::SinkEnded{..} => {
-                        rx.get_mut().undo();
+                    send_all::Reason::SinkEnded{last_item} => {
+                        if let Some(item) = last_item {
+                            rx.get_mut().undo(item);
+                        }
                         Ok(rx)
                     },
                 }

@@ -35,7 +35,7 @@ use tokio_signal::unix::Signal;
 use termios::*;
 
 use history::*;
-use child::ProcessReaders;
+use child::{ProcessReaders, ProcessError};
 use options::Options;
 
 fn main() {
@@ -97,7 +97,11 @@ fn run(options: Options) {
                 println!("Subprocess died, will restart in {:.2}s", holdoff);
                 let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                     .and_then(move |_| {
-                        child.lock().unwrap().spawn().unwrap();
+                        match child.lock().unwrap().spawn() {
+                            Err(ProcessError::ProcessAlreadySpawned) => (),
+                            Err(e) => println!("{:?}", e),
+                            Ok(..) => (),
+                        }
                         Ok(())
                     }).map(|_|()).map_err(|_|());
                 handle.spawn(timeout);
