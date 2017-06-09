@@ -1,137 +1,185 @@
-use std::process::{self, Command, ExitStatus};
+use std::process;
 use std::cell::{RefCell};
 use std::rc::{Rc};
-use std::io::prelude::*;
-use std::io::{self};
-use std::os::unix::io::{FromRawFd, AsRawFd};
+use std::sync::{Arc, Mutex};
 use std::error::{Error};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::io;
 
-use tty::{TtyServer, FileDesc};
-use tty::ffi::{WinSize, set_winsize, get_winsize};
-use mio::deprecated::{PipeReader, PipeWriter};
+use futures::{Stream, Poll, Async};
+use futures::task::{self, Task};
 
-use history::{History, HistoryType};
+use pty;
+use tokio_core::reactor::Handle;
+
+use history::{History};
+
+#[derive(Debug)]
+pub enum ProcessError {
+    ProcessAlreadySpawned,
+    NoChild,
+    IoError(io::Error),
+}
+
+impl From<io::Error> for ProcessError {
+    fn from(err: io::Error) -> Self {
+        ProcessError::IoError(err)
+    }
+}
 
 #[allow(dead_code)]
-pub struct Child {
+pub struct Process {
     args: Vec<String>,
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
     foreground: bool,
-    ttyserver: TtyServer,
-    child: Option<process::Child>,
+    child: Option<pty::Child>,
     exit_status: Option<process::ExitStatus>,
-    stdin: PipeWriter,
-    stdout: PipeReader,
+    window_sizes: HashMap<SocketAddr, (pty::Rows, pty::Columns)>,
+    stdin: Option<pty::PtySink>,
+    stdout: Option<pty::PtyStream>,
+    handle: Handle,
+    pr_task: Option<Task>,
+    pw_task: Option<Task>,
 }
 
-impl Child {
-    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, spawn:bool) -> Child {
-        let mut command = Command::new(&args[0]);
-        if args.len() > 1 {
-            command.args(&args[1..]);
-        }
-        let mut ttyserver = match TtyServer::new(None as Option<&FileDesc>) {
-            Err(why) => panic!("Error, could not open tty: {}", why),
-            Ok(s) => s,
-        };
-        // TODO: figure out if there are any benefits to inherit from stdin..
-        //let stdin = FileDesc::new(libc::STDOUT_FILENO, false);
-        //let mut ttyserver = match TtyServer::new(Some(&stdin)) {
-        let mut child = None;
-        if spawn {
-            match ttyserver.spawn(command) {
-                Err(why) => panic!("Couldn't spawn {}: {}", args[0], why.description()),
-                Ok(p) => {
-                    child = Some(p);
-                    history.borrow_mut().push(
-                        HistoryType::Info,
-                        format!("Successfully launched {}!\r\n", args[0]));
-                }
-            };
-        };
-
-        let fd = FileDesc::new(ttyserver.get_master().as_raw_fd(), false);
-        let fd2 = fd.dup().unwrap();
-        let stdin = unsafe { PipeWriter::from_raw_fd(fd.as_raw_fd())};
-        let stdout = unsafe { PipeReader::from_raw_fd(fd2.as_raw_fd())};
-        Child {
+impl Process {
+    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: Handle) -> Process {
+        Process {
             args: args,
             history: history,
             mailbox: Vec::new(),
             foreground: foreground,
-            ttyserver: ttyserver,
-            child: child,
+            child: None,
             exit_status: None,
-            stdin: stdin,
-            stdout: stdout,
+            window_sizes: HashMap::new(),
+            stdin: None,
+            stdout: None,
+            handle: handle,
+            pr_task: None,
+            pw_task: None,
         }
     }
 
-    pub fn new_from_child(other: Child) -> Child {
-        Child::new(other.args, other.history, other.foreground, true)
-    }
+    pub fn spawn(&mut self) -> Result<(), ProcessError> {
+        if self.child.is_some() {
+            return Err(ProcessError::ProcessAlreadySpawned);
+        }
+        let pty = pty::Pty::new();
 
-    pub fn read(&mut self) {
-        let mut buffer = [0;2048];
-        let len = self.stdout.read(&mut buffer).unwrap();
-        let line = match String::from_utf8(buffer[0..len].to_vec()) {
-            Err(why) => {
-                println!("Failed to parse utf8: {}", why);
-                String::new()
-            },
-            Ok(line) => line,
+        let mut command = process::Command::new(&self.args[0]);
+
+        if self.args.len() > 1 {
+            for arg in self.args[1..].iter() {
+                command.arg(arg);
+            }
+        }
+
+        match pty.spawn(command, &self.handle) {
+            Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),
+            Ok(child) => {
+                self.child = Some(child);
+                self.stdin = Some(self.child.as_mut().unwrap().input().take().unwrap());
+                self.stdout = Some(self.child.as_mut().unwrap().output().take().unwrap());
+                if let Some(task) = self.pr_task.take() {
+                    task.notify();
+                }
+                if let Some(task) = self.pw_task.take() {
+                    task.notify();
+                }
+                println!("Launched {}", self.args[0]);
+            }
         };
-        //println!("[child stdout]: len {}, {}", line.len(), &line);
-        if self.foreground {
-            let _ = io::stdout().write_all(&buffer[0..len]);
-            let _ = io::stdout().flush();
+        Ok(())
+    }
+
+    pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
+        if let Some(mut child) = self.child.take() {
+            return child.wait().map_err(|e| From::from(e));
         }
-        self.history.borrow_mut().push(HistoryType::Child, line);
+        Err(ProcessError::NoChild)
     }
 
-    pub fn stdin(&self) -> &PipeWriter {
-        &self.stdin
-    }
-
-    pub fn stdout(&self) -> &PipeReader {
-        &self.stdout
-    }
-
-    pub fn kill(&mut self) {
-        if self.is_alive() {
-            self.child.as_mut().unwrap().kill().expect("Failed to kill process");
+    pub fn kill(&mut self) -> Result<(), ProcessError> {
+        if let Some(ref mut child) = self.child {
+            return child.kill().map_err(|e| From::from(e))
         }
+        Err(ProcessError::NoChild)
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.child.is_some() && self.exit_status.is_none()
-    }
-
-    pub fn send(&mut self, msg:String) {
-        self.mailbox.push(msg);
-    }
-
-    pub fn write(&mut self) {
-        for msg in self.mailbox.drain(..) {
-            let _ = self.stdin.write(msg.as_bytes());
+    pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
+        //println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
+        self.window_sizes.insert(addr, ws);
+        let mut min_ws = (From::from(u16::max_value()), From::from(u16::max_value()));
+        for (_, ws) in &self.window_sizes {
+            if ws.0 < min_ws.0 {
+                min_ws.0 = ws.0;
+            }
+            if ws.1 < min_ws.1 {
+                min_ws.1 = ws.1;
+            }
+        }
+        if let Some(ref mut child) = self.child {
+            child.set_window_size(min_ws.0, min_ws.1);
         }
     }
 
-    pub fn wait(&mut self) -> &ExitStatus {
-        if self.exit_status.is_some() {
-            return self.exit_status.as_ref().unwrap();
-        } else {
-            self.exit_status = Some(self.child.as_mut().unwrap().wait().expect("Failed to wait on child"));
-        }
-        self.exit_status.as_ref().unwrap()
+    pub fn set_pr_task(&mut self, task: Task) {
+        self.pr_task = Some(task);
     }
 
-    pub fn resize(&self, rows: u16, cols: u16) {
-        let mut ws = get_winsize(&self.stdin).unwrap();
-        ws.ws_row = rows;
-        ws.ws_col = cols;
-        set_winsize(&self.stdin, &ws);
+    pub fn set_pw_task(&mut self, task: Task) {
+        self.pw_task = Some(task);
     }
 }
 
+pub struct ProcessWriters {
+    inner: Arc<Mutex<Process>>,
+}
+
+impl ProcessWriters {
+    pub fn new(inner: Arc<Mutex<Process>>) -> ProcessWriters {
+        ProcessWriters {
+            inner: inner,
+        }
+    }
+}
+
+impl Stream for ProcessWriters {
+    type Item = pty::PtySink;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        if let Some(stdin) = self.inner.lock().unwrap().stdin.take() {
+            return Ok(Async::Ready(Some(stdin)));
+        }
+        self.inner.lock().unwrap().set_pw_task(task::current());
+        Ok(Async::NotReady)
+    }
+}
+
+pub struct ProcessReaders {
+    inner: Arc<Mutex<Process>>,
+}
+
+impl ProcessReaders {
+    pub fn new(inner: Arc<Mutex<Process>>) -> ProcessReaders {
+        ProcessReaders {
+            inner: inner,
+        }
+    }
+}
+
+impl Stream for ProcessReaders {
+    type Item = pty::PtyStream;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        if let Some(stdout) = self.inner.lock().unwrap().stdout.take() {
+            return Ok(Async::Ready(Some(stdout)));
+        }
+        self.inner.lock().unwrap().set_pr_task(task::current());
+        Ok(Async::NotReady)
+    }
+}

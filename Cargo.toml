@@ -1,33 +1,34 @@
 [package]
-name = "rups"
-version = "0.1.0"
 authors = ["Niklas Claesson <nicke.claesson@gmail.com>"]
-description = """\
-    Rust Process Server lets you connect to your processes via telnet.\
-    It is heavily inspired by procServ.\
-    """
+description = "Rust Process Server lets you connect to your processes via telnet.It is heavily inspired by procServ."
 homepage = "https://github.com/NickeZ/rups"
+name = "rups"
 repository = "https://github.com/NickeZ/rups"
+version = "0.1.0"
 
 [dependencies]
-log = "0.3.6"
-env_logger = "0.3.5"
-clap = "2.18.0"
-mio = "0.6.1"
-slab = "0.3.0"
-time = "0.1.35"
-chan = "0.1.18"
-chan-signal = "0.1.7"
+byteorder = "1.0"
+clap = "2.20"
+env_logger = "0.3"
+fd = "0.2"
+futures = "0.1"
 libc = "0.2"
-fd = "0.2.2"
-termios = "0.2.2"
-byteorder = "1.0.0"
-tty = {path = "tty"}
+log = "0.3"
+mio = "0.6"
+slab = "0.3"
+termios = "0.2"
+time = "0.1"
+tokio-core = "0.1"
+tokio-io = "0.1"
+tokio-signal = "0.1"
+tokio-timer = "0.1"
+bytes = "0.4"
 
-#[dependencies.tty]
-#git = "https://github.com/NickeZ/tty-rs"
-#rev = "e21a6923ba720ed111431dabbde20a6d1febc61f"
+[dependencies.pty]
+path = "pty"
 
 [dependencies.rust-telnet]
-git = "https://github.com/Nercury/rust-telnet.git"
-rev = "a1b5c532cad01c26458d99667eda9429ae188e56"
+path = "rust-telnet"
+
+[dependencies.futures-addition]
+path = "futures-addition"

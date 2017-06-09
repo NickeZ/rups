@@ -43,64 +43,67 @@ impl Options {
     pub fn parse_args() -> Options {
         let mut options = Options::default();
         let matches = App::new("Rups")
-                          .version(VERSION)
-                          .author("Niklas Claesson <nicke.claesson@gmail.com>")
-                          .about("Rust process server")
-                          .arg(Arg::with_name("wait")
-                               .long("wait")
-                               .short("w")
-                               .help("let user start process via telnet command"))
-                          .arg(Arg::with_name("noautorestart")
-                               .long("noautorestart")
-                               .help("do not restart the child process by default"))
-                          .arg(Arg::with_name("quiet")
-                               .short("q")
-                               .long("quiet")
-                               .help("suppress messages (server)"))
-                          .arg(Arg::with_name("noinfo")
-                               .short("n")
-                               .long("noinfo")
-                               .help("suppress messages (clients)"))
-                          .arg(Arg::with_name("foreground")
-                               .short("f")
-                               .long("foreground")
-                               .help("print process output to stdout (server)"))
-                          .arg(Arg::with_name("holdoff")
-                               .long("holdoff")
-                               .help("wait n seconds between process restart")
-                               .takes_value(true))
-                          .arg(Arg::with_name("interactive")
-                               .short("I")
-                               .long("interactive")
-                               .help("Connect stdin to process input (server)"))
-                          .arg(Arg::with_name("bind")
-                               .short("b")
-                               .long("bind")
-                               .multiple(true)
-                               .help("Bind to address (default is 127.0.0.1:3000")
-                               .takes_value(true))
-                          .arg(Arg::with_name("logbind")
-                               .short("l")
-                               .long("logbind")
-                               .multiple(true)
-                               .help("Bind to address for log output (ignore any received data)")
-                               .takes_value(true))
-                          .arg(Arg::with_name("logfile")
-                               .short("L")
-                               .long("logfile")
-                               .multiple(true)
-                               .help("Output to logfile")
-                               .takes_value(true))
-                          .arg(Arg::with_name("histsize")
-                               .long("histsize")
-                               .help("Set maximum telnet packets to remember")
-                               .takes_value(true))
-                          .arg(Arg::with_name("command")
-                               .required(true)
-                               .multiple(true))
-                          .get_matches();
+            .version(VERSION)
+            .author("Niklas Claesson <nicke.claesson@gmail.com>")
+            .about("Rust process server")
+            .arg(Arg::with_name("wait")
+                .long("wait")
+                .short("w")
+                .help("let user start process via telnet command"))
+            .arg(Arg::with_name("noautorestart")
+                .long("noautorestart")
+                .help("do not restart the child process by default"))
+            .arg(Arg::with_name("quiet")
+                .short("q")
+                .long("quiet")
+                .help("suppress messages (server)"))
+            .arg(Arg::with_name("noinfo")
+                .short("n")
+                .long("noinfo")
+                .help("suppress messages (clients)"))
+            .arg(Arg::with_name("foreground")
+                .short("f")
+                .long("foreground")
+                .help("print process output to stdout (server)"))
+            .arg(Arg::with_name("holdoff")
+                .long("holdoff")
+                .help("wait n seconds between process restart")
+                .takes_value(true))
+            .arg(Arg::with_name("interactive")
+                .short("I")
+                .long("interactive")
+                .help("Connect stdin to process input (server)"))
+            .arg(Arg::with_name("bind")
+                .short("b")
+                .long("bind")
+                .multiple(true)
+                .help("Bind to address (default is 127.0.0.1:3000")
+                .takes_value(true))
+            .arg(Arg::with_name("logbind")
+                .short("l")
+                .long("logbind")
+                .multiple(true)
+                .help("Bind to address for log output (ignore any received data)")
+                .takes_value(true))
+            .arg(Arg::with_name("logfile")
+                .short("L")
+                .long("logfile")
+                .multiple(true)
+                .help("Output to logfile")
+                .takes_value(true))
+            .arg(Arg::with_name("histsize")
+                .long("histsize")
+                .help("Set maximum telnet packets to remember")
+                .takes_value(true))
+            .arg(Arg::with_name("command")
+                .required(true)
+                .multiple(true))
+            .get_matches();
 
-        options.command = values_t!(matches, "command", String).expect("Argument 'command' missing");
+        options.command = matches.values_of("command")
+            .expect("Argument 'command' missing")
+            .map(String::from)
+            .collect();
 
         options.foreground = matches.is_present("foreground");
         options.autorestart = !matches.is_present("noautorestart");
@@ -114,18 +117,20 @@ impl Options {
         if let Ok(history_size) = value_t!(matches, "histsize", usize) {
             options.history_size = history_size;
         }
-        if let Ok(bindv) = values_t!(matches, "bind", String) {
+        if let Some(bindv) = matches.values_of("bind") {
             // TODO(nc): Interpret ip:port, port, unix socket
+            let bindv = bindv.collect::<Vec<&str>>();
             options.binds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
         }
-        if let Ok(bindv) = values_t!(matches, "logbind", String) {
+        if let Some(bindv) = matches.values_of("logbind") {
             // TODO(nc): Interpret ip:port, port, unix socket
+            let bindv = bindv.collect::<Vec<&str>>();
             options.logbinds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
         }
         options
     }
 
-    pub fn toggle_autorestart(&mut self) {
-        self.autorestart = ! self.autorestart;
-    }
+    //pub fn toggle_autorestart(&mut self) {
+    //    self.autorestart = ! self.autorestart;
+    //}
 }
