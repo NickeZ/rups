@@ -15,14 +15,16 @@ Rups also keeps your process alive by restarting it as soon as it dies.
 A lot of the functionality is not implemented. This project should be
 considered under development...
 
+[![asciicast](https://asciinema.org/a/124007.png)](https://asciinema.org/a/124007)
+
 
 ## Install
 
-1. Install nightly rust with: `curl https://sh.rustup.rs -sSf | sh`.
-   (https://www.rustup.rs/)
-2. Run with `cargo run -- -h` to see the built-in help.
+1. Install rust with: `curl https://sh.rustup.rs -sSf | sh`. (https://www.rustup.rs/)
+2. Install rups with: `cargo install --git https://github.com/nickez/rups`
+3. Run with `rups -h` to see the built-in help.
 
 ## Example Usage
 
-1. Launch python through rups: `cargo run -- python`
-2. Connect to python through separate terminal: `telnet localhost 3000`
+1. Launch python through rups: `rups python`
+2. Connect to python through a separate terminal: `telnet localhost 3000`
