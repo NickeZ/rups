@@ -10,6 +10,7 @@ use futures::sync::mpsc;
 use futures::stream;
 use std::io;
 use std::vec::IntoIter;
+use time;
 
 use history::{History, HistoryReader};
 
@@ -60,6 +61,7 @@ impl TelnetServer {
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
+                .and_then(|(rx, _tx)| rx.send_all(motd()))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -144,4 +146,17 @@ fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
     stream::iter(vec![Ok(vec![IAC::IAC, IAC::WILL, OPTION::ECHO]),
                       Ok(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]),
                       Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
+}
+pub fn motd() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
+    let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
+    stream::iter(
+        vec![Ok(b"\x1B[33m".to_vec()),
+             Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
+             Ok(b"Auto start is {}, Auto restart is {}\r\n".to_vec()),
+             Ok(b"^X to kill the child, ^T to toggle auto restart\r\n".to_vec()),
+             Ok(b"^R to (re)start the child\r\n".to_vec()),
+             Ok(b"This server was started at: ".to_vec()),
+             Ok(now.unwrap().as_bytes().to_vec()),
+             Ok(b"\x1B[0m\r\n".to_vec())]
+    )
 }
