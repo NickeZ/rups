@@ -19,12 +19,9 @@ extern crate futures_addition;
 
 mod history;
 mod telnet_server;
-//mod telnet_client;
 mod child;
 mod options;
 
-//use std::io::prelude::*;
-//use std::os::unix::io::{FromRawFd};
 use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
@@ -35,14 +32,9 @@ use std::time::Duration;
 use futures::{Future, Sink, Stream};
 use tokio_signal::unix::Signal;
 
-//use mio::*;
-//use mio::timer::{Timer};
-//use mio::deprecated::{PipeReader};
 use termios::*;
-//use log::LogLevel;
 
 use history::*;
-//use telnet_server::*;
 use child::ProcessReaders;
 use options::Options;
 
@@ -84,13 +76,14 @@ fn run(options: Options) {
         core.handle(),
     );
     if options.autostart {
-        child.spawn().expect("Failed to launch process");
+        child.spawn().expect("Failed to start process");
     }
     let child = Arc::new(Mutex::new(child));
 
     let terminate = Signal::new(libc::SIGINT, &handle);
     let dead_children = Signal::new(libc::SIGCHLD, &handle);
 
+    let holdoff = options.holdoff;
     let sec = options.holdoff.floor();
     let nsec = (options.holdoff - sec) * 1_000_000_000f64;
 
@@ -100,7 +93,7 @@ fn run(options: Options) {
             let child = child.clone();
             child.lock().unwrap().wait().unwrap();
             if options.autorestart {
-                println!("Subprocess died, will relaunch in {}.{}s", sec, nsec);
+                println!("Subprocess died, will restart in {:.2}s", holdoff);
                 let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                     .and_then(move |_| {
                         child.lock().unwrap().spawn().unwrap();
