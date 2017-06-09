@@ -59,6 +59,12 @@ impl TelnetServer {
         let tx = self.tx.clone();
         let process = self.process.clone();
         let options = self.options.clone();
+        // Don't change commands at runtime
+        let killcmd = self.options.borrow().killcmd;
+        let togglecmd = self.options.borrow().togglecmd;
+        let restartcmd = self.options.borrow().restartcmd;
+        let autostart = self.options.borrow().autostart;
+        let autorestart = self.options.borrow().autorestart;
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
@@ -69,7 +75,7 @@ impl TelnetServer {
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
-                .and_then(|(rx, _tx)| rx.send_all(motd()))
+                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart)))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -85,26 +91,24 @@ impl TelnetServer {
                 let options = options.clone();
                 match x {
                     TelnetIn::Text {text} => if text.len() == 1 {
-                        // TODO: User customized commands
-                        match text[0] {
-                            0x12 => { // Ctrl-R
-                                debug!("Receieved relaunch command");
-                                let mut process = process.lock().unwrap();
-                                let _ = process.spawn();
-                                return None
-                            },
-                            0x14 => { // Ctrl-T
-                                options.borrow_mut().toggle_autorestart();
-                                debug!("Receieved toggle autorestart command");
-                                return None
-                            },
-                            0x18 => { // Ctrl-X
-                                debug!("Received kill command");
-                                let mut process = process.lock().unwrap();
-                                process.kill().unwrap();
-                                return None
-                            },
-                            _ => return Some(text),
+                        trace!("Received {:?}", text);
+                        let cmd = text[0];
+                        if cmd == restartcmd {
+                            debug!("Receieved relaunch command");
+                            let mut process = process.lock().unwrap();
+                            let _ = process.spawn();
+                            return None
+                        } else if cmd == togglecmd {
+                            options.borrow_mut().toggle_autorestart();
+                            debug!("Receieved toggle autorestart command");
+                            return None
+                        } else if cmd == killcmd {
+                            debug!("Received kill command");
+                            let mut process = process.lock().unwrap();
+                            process.kill().unwrap();
+                            return None
+                        } else {
+                            return Some(text)
                         }
                     },
                     // TODO: Wrong compiler warning?
@@ -157,16 +161,35 @@ fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
                       Ok(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]),
                       Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
 }
-pub fn motd() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
+pub fn motd(killcmd: u8, togglecmd: u8, restartcmd: u8, autostart: bool, autorestart: bool) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
     let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
     stream::iter(
         vec![Ok(b"\x1B[33m".to_vec()),
              Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
-             Ok(b"Auto start is {}, Auto restart is {}\r\n".to_vec()),
-             Ok(b"^X to kill the child, ^T to toggle auto restart\r\n".to_vec()),
-             Ok(b"^R to (re)start the child\r\n".to_vec()),
+             Ok(format!("Auto start is {}, Auto restart is {}\r\n", autostart, autorestart).into_bytes()),
+             Ok(format!("{} to kill the child, {} to toggle auto restart\r\n",
+                        format_shortcut(killcmd),
+                        format_shortcut(togglecmd)).into_bytes()),
+             Ok(format!("{} to (re)start the child\r\n",
+                        format_shortcut(restartcmd)).into_bytes()),
              Ok(b"This server was started at: ".to_vec()),
              Ok(now.unwrap().as_bytes().to_vec()),
              Ok(b"\x1B[0m\r\n".to_vec())]
     )
+}
+
+pub fn format_shortcut(cmd: u8) -> String {
+    match cmd {
+        c if c < 32 => {
+            let mut s = String::with_capacity(2);
+            s.insert(0, '^');
+            s.insert(1, (0x40 | c) as char);
+            s
+        },
+        c => {
+            let mut s = String::with_capacity(1);
+            s.insert(0, c as char);
+            s
+        }
+    }
 }

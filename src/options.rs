@@ -16,6 +16,9 @@ pub struct Options {
     pub holdoff: f64,
     pub binds: Option<Vec<SocketAddr>>,
     pub logbinds: Option<Vec<SocketAddr>>,
+    pub killcmd: u8,
+    pub togglecmd: u8,
+    pub restartcmd: u8,
 }
 
 impl Default for Options {
@@ -35,6 +38,9 @@ impl Default for Options {
             holdoff: 5.0,
             binds: Some(addrs),
             logbinds: Some(logaddrs),
+            killcmd: 0x18,
+            togglecmd: 0x14,
+            restartcmd: 0x12,
         }
     }
 }
@@ -95,6 +101,20 @@ impl Options {
                 .long("histsize")
                 .help("Set maximum telnet packets to remember")
                 .takes_value(true))
+            .arg(Arg::with_name("killcmd")
+                .short("k")
+                .long("killcmd")
+                .help("Command to send SIGKILL to process")
+                .takes_value(true))
+            .arg(Arg::with_name("autorestartcmd")
+                .long("autorestartcmd")
+                .help("Command to toggle autorestart of process")
+                .takes_value(true))
+            .arg(Arg::with_name("restartcmd")
+                .short("r")
+                .long("restartcmd")
+                .help("Command to start the process")
+                .takes_value(true))
             .arg(Arg::with_name("command")
                 .required(true)
                 .multiple(true))
@@ -127,10 +147,38 @@ impl Options {
             let bindv = bindv.collect::<Vec<&str>>();
             options.logbinds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
         }
+        if let Some(cmd) = matches.value_of("killcmd") {
+            match parse_shortcut(cmd.as_bytes()) {
+                Ok(cmd) => options.killcmd = cmd,
+                Err(..) => println!("Failed to parse {}", cmd),
+            }
+        }
+        if let Some(cmd) = matches.value_of("autorestartcmd") {
+            match parse_shortcut(cmd.as_bytes()) {
+                Ok(cmd) => options.togglecmd = cmd,
+                Err(..) => println!("Failed to parse {}", cmd),
+            }
+        }
+        if let Some(cmd) = matches.value_of("restartcmd") {
+            match parse_shortcut(cmd.as_bytes()) {
+                Ok(cmd) => options.restartcmd = cmd,
+                Err(..) => println!("Failed to parse {}", cmd),
+            }
+        }
+
         options
     }
 
     pub fn toggle_autorestart(&mut self) {
         self.autorestart = ! self.autorestart;
+    }
+}
+
+// Parses ^[a-zA-Z] to the correct control code
+fn parse_shortcut(buf: &[u8]) -> Result<u8,()> {
+    match buf.len() {
+        2  if buf[0] == b'^' && buf[1] >= b'A' && buf[1] <= b'z' => Ok(0x1f & buf[1]),
+        1  if buf[0] >= b'A' && buf[0] <= b'z' => Ok(buf[0]),
+        _ => Err(()),
     }
 }
