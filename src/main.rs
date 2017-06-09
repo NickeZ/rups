@@ -65,17 +65,18 @@ fn run(options: Options) {
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let handle = core.handle();
 
-    let history = Rc::new(RefCell::new(History::new(options.history_size)));
+    let options = Rc::new(RefCell::new(options));
+    let history = Rc::new(RefCell::new(History::new(options.borrow().history_size)));
 
     let timer = tokio_timer::Timer::default();
 
     let mut child = child::Process::new(
-        options.command.clone(),
+        options.borrow().command.clone(),
         history.clone(),
-        options.foreground,
+        options.borrow().foreground,
         core.handle(),
     );
-    if options.autostart {
+    if options.borrow().autostart {
         child.spawn().expect("Failed to start process");
     }
     let child = Arc::new(Mutex::new(child));
@@ -83,16 +84,16 @@ fn run(options: Options) {
     let terminate = Signal::new(libc::SIGINT, &handle);
     let dead_children = Signal::new(libc::SIGCHLD, &handle);
 
-    let holdoff = options.holdoff;
-    let sec = options.holdoff.floor();
-    let nsec = (options.holdoff - sec) * 1_000_000_000f64;
+    let holdoff = options.borrow().holdoff;
+    let sec = holdoff.floor();
+    let nsec = (holdoff - sec) * 1_000_000_000f64;
 
     let sigchld_handling = dead_children.and_then(|signal| {
         signal.fold(timer, |timer, signal| {
             trace!("got signal {:?}", signal);
             let child = child.clone();
             child.lock().unwrap().wait().unwrap();
-            if options.autorestart {
+            if options.borrow().autorestart {
                 println!("Subprocess died, will restart in {:.2}s", holdoff);
                 let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                     .and_then(move |_| {
@@ -122,13 +123,13 @@ fn run(options: Options) {
             })
         }).map_err(|_|());
 
-    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.noinfo);
-    if let Some(binds) = options.binds.as_ref() {
+    let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.clone());
+    if let Some(binds) = options.borrow().binds.as_ref() {
         for bind in binds {
             telnet_server.bind(&bind, core.handle(), false);
         }
     }
-    if let Some(binds) = options.logbinds.as_ref() {
+    if let Some(binds) = options.borrow().logbinds.as_ref() {
         for bind in binds {
             telnet_server.bind(&bind, core.handle(), true);
         }

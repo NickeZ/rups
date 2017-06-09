@@ -20,24 +20,30 @@ use futures_addition::send_all;
 use futures_addition::rx_wrapper::ReceiverWrapper;
 
 use child;
+use options::Options;
 
 pub struct TelnetServer {
     process: Arc<Mutex<child::Process>>,
     history: Rc<RefCell<History>>,
-    //noinfo: bool,
+    options: Rc<RefCell<Options>>,
     listeners: Vec<Box<Future<Item=(), Error=io::Error>>>,
     tx: mpsc::Sender<Vec<u8>>,
     rx: ReceiverWrapper<Vec<u8>>,
 }
 
 impl TelnetServer {
-    pub fn new(history: Rc<RefCell<History>>, process: Arc<Mutex<child::Process>>, _noinfo: bool) -> TelnetServer {
+    pub fn new(
+        history: Rc<RefCell<History>>,
+        process: Arc<Mutex<child::Process>>,
+        options: Rc<RefCell<Options>>,
+        ) -> TelnetServer
+    {
         // Create a channel for all telnet clients to put their data
         let (tx, rx) = mpsc::channel(2048);
         TelnetServer {
             process: process,
             history: history,
-            //noinfo: noinfo,
+            options: options,
             listeners: Vec::new(),
             tx: tx,
             rx: ReceiverWrapper::new(rx),
@@ -52,10 +58,12 @@ impl TelnetServer {
         let history = self.history.clone();
         let tx = self.tx.clone();
         let process = self.process.clone();
+        let options = self.options.clone();
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
             let process = process.clone();
+            let options = options.clone();
 
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
@@ -74,6 +82,7 @@ impl TelnetServer {
             // Filter out commands from telnet client
             let reader = reader.filter_map(move |x| {
                 let process = process.clone();
+                let options = options.clone();
                 match x {
                     TelnetIn::Text {text} => if text.len() == 1 {
                         // TODO: User customized commands
@@ -85,6 +94,7 @@ impl TelnetServer {
                                 return None
                             },
                             0x14 => { // Ctrl-T
+                                options.borrow_mut().toggle_autorestart();
                                 debug!("Receieved toggle autorestart command");
                                 return None
                             },
