@@ -11,6 +11,7 @@ use futures::stream;
 use std::io;
 use std::vec::IntoIter;
 use time;
+use std::path::PathBuf;
 
 use history::{History, HistoryReader};
 
@@ -68,12 +69,13 @@ impl TelnetServer {
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
             let process = process.clone();
             let options = options.clone();
+            let chdir = options.borrow().chdir.clone();
 
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
-                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart)))
+                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir)))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -162,7 +164,15 @@ fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
                       Ok(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]),
                       Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
 }
-pub fn motd(killcmd: u8, togglecmd: u8, restartcmd: u8, autostart: bool, autorestart: bool) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
+pub fn motd(
+    killcmd: u8,
+    togglecmd: u8,
+    restartcmd: u8,
+    autostart: bool,
+    autorestart: bool,
+    chdir: PathBuf,
+    ) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>>
+{
     let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
     stream::iter(
         vec![Ok(b"\x1B[33m".to_vec()),
@@ -173,6 +183,7 @@ pub fn motd(killcmd: u8, togglecmd: u8, restartcmd: u8, autostart: bool, autores
                         format_shortcut(togglecmd)).into_bytes()),
              Ok(format!("{} to (re)start the child\r\n",
                         format_shortcut(restartcmd)).into_bytes()),
+             Ok(format!("Child working dir: {}\r\n", chdir.display()).into_bytes()),
              Ok(b"This server was started at: ".to_vec()),
              Ok(now.unwrap().as_bytes().to_vec()),
              Ok(b"\x1B[0m\r\n".to_vec())]

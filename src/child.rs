@@ -6,6 +6,7 @@ use std::error::{Error};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::io;
+use std::path::PathBuf;
 
 use futures::{Stream, Poll, Async};
 use futures::task::{self, Task};
@@ -31,6 +32,7 @@ impl From<io::Error> for ProcessError {
 #[allow(dead_code)]
 pub struct Process {
     args: Vec<String>,
+    chdir: PathBuf,
     history: Rc<RefCell<History>>,
     mailbox: Vec<String>,
     foreground: bool,
@@ -45,9 +47,10 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(args:Vec<String>, history:Rc<RefCell<History>>, foreground:bool, handle: Handle) -> Process {
+    pub fn new(args:Vec<String>, chdir:PathBuf, history:Rc<RefCell<History>>, foreground:bool, handle: Handle) -> Process {
         Process {
             args: args,
+            chdir: chdir,
             history: history,
             mailbox: Vec::new(),
             foreground: foreground,
@@ -75,6 +78,7 @@ impl Process {
                 command.arg(arg);
             }
         }
+        command.current_dir(&self.chdir);
 
         match pty.spawn(command, &self.handle) {
             Err(why) => panic!("Couldn't spawn {}: {}", self.args[0], why.description()),

@@ -72,6 +72,7 @@ fn run(options: Options) {
 
     let mut child = child::Process::new(
         options.borrow().command.clone(),
+        options.borrow().chdir.clone(),
         history.clone(),
         options.borrow().foreground,
         core.handle(),

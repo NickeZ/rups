@@ -1,5 +1,6 @@
 use std::net::{SocketAddr, IpAddr};
 use std::str::{FromStr};
+use std::path::PathBuf;
 
 use clap::{Arg, App};
 
@@ -19,6 +20,7 @@ pub struct Options {
     pub killcmd: u8,
     pub togglecmd: u8,
     pub restartcmd: u8,
+    pub chdir: PathBuf,
 }
 
 impl Default for Options {
@@ -41,6 +43,7 @@ impl Default for Options {
             killcmd: 0x18,
             togglecmd: 0x14,
             restartcmd: 0x12,
+            chdir: ::std::env::current_dir().expect("Failed to get pwd"),
         }
     }
 }
@@ -115,6 +118,11 @@ impl Options {
                 .long("restartcmd")
                 .help("Command to start the process")
                 .takes_value(true))
+            .arg(Arg::with_name("chdir")
+                .short("c")
+                .long("chdir")
+                .help("Process working directory")
+                .takes_value(true))
             .arg(Arg::with_name("command")
                 .required(true)
                 .multiple(true))
@@ -164,6 +172,13 @@ impl Options {
                 Ok(cmd) => options.restartcmd = cmd,
                 Err(..) => println!("Failed to parse {}", cmd),
             }
+        }
+        if let Some(chdir) = matches.value_of("chdir") {
+            let chdir = PathBuf::from(chdir);
+            if ! chdir.is_dir() {
+                panic!("Process working directory must exist");
+            }
+            options.chdir = chdir;
         }
 
         if options.killcmd == options.togglecmd || options.killcmd == options.restartcmd || options.togglecmd == options.restartcmd {
