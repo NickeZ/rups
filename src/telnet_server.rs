@@ -10,7 +10,6 @@ use futures::sync::mpsc;
 use futures::stream;
 use std::io;
 use std::vec::IntoIter;
-use time;
 use std::path::PathBuf;
 
 use history::{History, HistoryReader};
@@ -68,6 +67,7 @@ impl TelnetServer {
             println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
             let process = process.clone();
+            let process2 = process.clone();
             let options = options.clone();
             let chdir = options.borrow().chdir.clone();
             let started_at = options.borrow().started_at.clone();
@@ -76,7 +76,7 @@ impl TelnetServer {
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
-                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir, started_at)))
+                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir, started_at, process2)))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -173,9 +173,14 @@ pub fn motd(
     autorestart: bool,
     chdir: PathBuf,
     started_at: String,
+    process: Arc<Mutex<child::Process>>,
     ) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>>
 {
-    //let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
+    let child_started_at = if let Some(started_at) = process.lock().unwrap().started_at() {
+        started_at.clone()
+    } else {
+        "Not started yet".to_owned()
+    };
     stream::iter(
         vec![Ok(b"\x1B[33m".to_vec()),
              Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
@@ -186,8 +191,11 @@ pub fn motd(
              Ok(format!("{} to (re)start the child\r\n",
                         format_shortcut(restartcmd)).into_bytes()),
              Ok(format!("Child working dir: {}\r\n", chdir.display()).into_bytes()),
-             Ok(b"This server was started at: ".to_vec()),
+             Ok(b"The server was started at: ".to_vec()),
              Ok(started_at.as_bytes().to_vec()),
+             Ok(b"\r\n".to_vec()),
+             Ok(b"The child was started at: ".to_vec()),
+             Ok(child_started_at.as_bytes().to_vec()),
              Ok(b"\r\n".to_vec()),
              Ok(b"\x1B[0m".to_vec())]
     )

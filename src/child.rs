@@ -13,6 +13,7 @@ use futures::task::{self, Task};
 
 use pty;
 use tokio_core::reactor::Handle;
+use time;
 
 use history::{History};
 
@@ -44,6 +45,7 @@ pub struct Process {
     handle: Handle,
     pr_task: Option<Task>,
     pw_task: Option<Task>,
+    started_at: Option<String>,
 }
 
 impl Process {
@@ -62,6 +64,7 @@ impl Process {
             handle: handle,
             pr_task: None,
             pw_task: None,
+            started_at: None,
         }
     }
 
@@ -92,10 +95,15 @@ impl Process {
                 if let Some(task) = self.pw_task.take() {
                     task.notify();
                 }
+                self.started_at = Some(time::strftime("%a, %d %b %Y %T %z", &time::now()).expect("Failed to format time"));
                 println!("Launched {}", self.args[0]);
             }
         };
         Ok(())
+    }
+
+    pub fn started_at(&self) -> Option<&String> {
+        self.started_at.as_ref()
     }
 
     pub fn wait(&mut self) -> Result<process::ExitStatus, ProcessError> {
