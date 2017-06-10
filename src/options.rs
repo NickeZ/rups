@@ -126,6 +126,15 @@ impl Options {
             .arg(Arg::with_name("command")
                 .required(true)
                 .multiple(true))
+            .after_help("All commands (killcmd, ...) take either a single \
+                         letter or caret (^) + a single letter as arguments. \
+                         For example '^x' for Ctrl-X or 'x' for literal x.
+
+EXAMPLES:
+    rups bash
+
+    Will launch bash as the child process using the \
+    default options.")
             .get_matches();
 
         options.command = matches.values_of("command")
