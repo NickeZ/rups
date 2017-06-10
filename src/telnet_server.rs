@@ -70,12 +70,13 @@ impl TelnetServer {
             let process = process.clone();
             let options = options.clone();
             let chdir = options.borrow().chdir.clone();
+            let started_at = options.borrow().started_at.clone();
 
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
-                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir)))
+                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir, started_at)))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -171,9 +172,10 @@ pub fn motd(
     autostart: bool,
     autorestart: bool,
     chdir: PathBuf,
+    started_at: String,
     ) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>>
 {
-    let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
+    //let now = time::strftime("%a, %d %b %Y %T %z", &time::now());
     stream::iter(
         vec![Ok(b"\x1B[33m".to_vec()),
              Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
@@ -185,8 +187,9 @@ pub fn motd(
                         format_shortcut(restartcmd)).into_bytes()),
              Ok(format!("Child working dir: {}\r\n", chdir.display()).into_bytes()),
              Ok(b"This server was started at: ".to_vec()),
-             Ok(now.unwrap().as_bytes().to_vec()),
-             Ok(b"\x1B[0m\r\n".to_vec())]
+             Ok(started_at.as_bytes().to_vec()),
+             Ok(b"\r\n".to_vec()),
+             Ok(b"\x1B[0m".to_vec())]
     )
 }
 

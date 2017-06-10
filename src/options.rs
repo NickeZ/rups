@@ -3,6 +3,7 @@ use std::str::{FromStr};
 use std::path::PathBuf;
 
 use clap::{Arg, App};
+use time;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -21,6 +22,8 @@ pub struct Options {
     pub togglecmd: u8,
     pub restartcmd: u8,
     pub chdir: PathBuf,
+    // Not really an option.. but lets store it here for now..
+    pub started_at: String,
 }
 
 impl Default for Options {
@@ -44,6 +47,7 @@ impl Default for Options {
             togglecmd: 0x14,
             restartcmd: 0x12,
             chdir: ::std::env::current_dir().expect("Failed to get pwd"),
+            started_at: time::strftime("%a, %d %b %Y %T %z", &time::now()).expect("Failed to format time"),
         }
     }
 }
