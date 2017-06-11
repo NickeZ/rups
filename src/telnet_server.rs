@@ -158,6 +158,10 @@ impl TelnetServer {
         handle.spawn(server);
         Box::new(x)
     }
+
+    pub fn tx(&self) -> mpsc::Sender<Vec<u8>> {
+        self.tx.clone()
+    }
 }
 
 fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {

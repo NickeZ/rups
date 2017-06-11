@@ -144,8 +144,6 @@ fn run(options: Options) {
         }
     }
 
-    let telnet_server = telnet_server.server(core.handle());
-
     let mut joins = Vec::new();
 
     if options.borrow().foreground {
@@ -161,6 +159,33 @@ fn run(options: Options) {
         }).map(|_|()).map_err(|_|());
         joins.push(Box::new(hr) as Box<Future<Item=(), Error=()>>);
     }
+
+    if options.borrow().interactive {
+        let old_termios = Termios::from_fd(libc::STDIN_FILENO).unwrap();
+        let mut new_termios = old_termios;
+        new_termios.c_lflag &= !(ICANON | ECHO);
+        let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, &mut new_termios);
+        //let stdin = std::io::stdin();
+        //let file = tokio_file_unix::StdFile(stdin.lock()); //Does not work because of borrow
+        let file = std::fs::File::open("/dev/stdin").unwrap();
+        let file = tokio_file_unix::File::new_nb(file).unwrap();
+        let file = file.into_io(&handle).unwrap();
+        let tx = telnet_server.tx();
+        let hw = futures::future::loop_fn((file, tx), |(file, tx)|{
+            tokio_io::io::read(file, [0u8;10]).and_then(|(file, buf, len)| {
+                if len == 0 {
+                    //return futures::future::Loop::Break(())
+                    unreachable!()
+                }
+                tx.send(buf[0..len].to_vec()).and_then(|tx| {
+                    tx.flush().and_then(|tx| Ok(futures::future::Loop::Continue((file, tx))))
+                }).map_err(|_| io::Error::new(io::ErrorKind::Other, "mupp"))
+            })
+        }).map_err(|_|());
+        joins.push(Box::new(hw) as Box<Future<Item=(), Error=()>>);
+    }
+
+    let telnet_server = telnet_server.server(core.handle());
 
     joins.push(Box::new(sigchld_handling) as Box<Future<Item=(), Error=()>>);
     joins.push(Box::new(proc_output) as Box<Future<Item=(), Error=()>>);
