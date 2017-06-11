@@ -30,11 +30,9 @@ pub struct History {
 impl History {
     pub fn new(options: &Options) -> History {
         let buf = VecDeque::with_capacity(options.history_size);
-        let logfiles = options.logfiles.as_ref().map_or(Vec::new(), |logfiles| {
-            logfiles.iter().map(|file| {
-                OpenOptions::new().write(true).create(true).open(file).expect("Failed to open logfile")
-            }).collect()
-        });
+        let logfiles = options.logfiles.iter().map(|file| {
+            OpenOptions::new().write(true).create(true).open(file).expect("Failed to open logfile")
+        }).collect();
 
         History {
             buffers: buf,

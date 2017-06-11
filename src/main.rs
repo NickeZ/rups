@@ -52,7 +52,7 @@ fn main() {
 
     let options = Options::parse_args();
 
-    if options.binds.is_none() && options.logbinds.is_none() {
+    if options.binds.is_empty() && options.logbinds.is_empty() {
         panic!("No network binds!");
     }
 
@@ -133,15 +133,11 @@ fn run(options: Options) {
         }).map_err(|_|());
 
     let mut telnet_server = telnet_server::TelnetServer::new(history.clone(), child.clone(), options.clone());
-    if let Some(binds) = options.borrow().binds.as_ref() {
-        for bind in binds {
-            telnet_server.bind(&bind, core.handle(), false);
-        }
+    for bind in options.borrow().binds.iter() {
+        telnet_server.bind(&bind, core.handle(), false);
     }
-    if let Some(binds) = options.borrow().logbinds.as_ref() {
-        for bind in binds {
-            telnet_server.bind(&bind, core.handle(), true);
-        }
+    for bind in options.borrow().logbinds.iter() {
+        telnet_server.bind(&bind, core.handle(), true);
     }
 
     let mut joins = Vec::new();

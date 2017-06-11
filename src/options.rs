@@ -16,9 +16,9 @@ pub struct Options {
     pub autorestart: bool,
     pub noinfo: bool,
     pub holdoff: f64,
-    pub binds: Option<Vec<SocketAddr>>,
-    pub logbinds: Option<Vec<SocketAddr>>,
-    pub logfiles: Option<Vec<PathBuf>>,
+    pub binds: Vec<SocketAddr>,
+    pub logbinds: Vec<SocketAddr>,
+    pub logfiles: Vec<PathBuf>,
     pub killcmd: u8,
     pub togglecmd: u8,
     pub restartcmd: u8,
@@ -42,9 +42,9 @@ impl Default for Options {
             autorestart: true,
             noinfo: false,
             holdoff: 5.0,
-            binds: Some(addrs),
-            logbinds: Some(logaddrs),
-            logfiles: None,
+            binds: addrs,
+            logbinds: logaddrs,
+            logfiles: Vec::new(),
             killcmd: 0x18,
             togglecmd: 0x14,
             restartcmd: 0x12,
@@ -162,17 +162,14 @@ EXAMPLES:
         }
         if let Some(bindv) = matches.values_of("bind") {
             // TODO(nc): Interpret ip:port, port, unix socket
-            let bindv = bindv.collect::<Vec<&str>>();
-            options.binds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
+            options.binds = bindv.map(|b| b.parse().unwrap()).collect();
         }
         if let Some(bindv) = matches.values_of("logbind") {
             // TODO(nc): Interpret ip:port, port, unix socket
-            let bindv = bindv.collect::<Vec<&str>>();
-            options.logbinds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
+            options.logbinds = bindv.map(|b| b.parse().unwrap()).collect();
         }
         if let Some(pathv) = matches.values_of("logfile") {
-            let pathv = pathv.collect::<Vec<&str>>();
-            options.logfiles = Some(pathv.iter().map(|b| PathBuf::from(b)).collect());
+            options.logfiles = pathv.map(|b| PathBuf::from(b)).collect();
         }
         if let Some(cmd) = matches.value_of("killcmd") {
             match parse_shortcut(cmd.as_bytes()) {
