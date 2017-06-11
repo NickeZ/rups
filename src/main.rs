@@ -16,11 +16,13 @@ extern crate tokio_io;
 extern crate tokio_signal;
 extern crate tokio_timer;
 extern crate futures_addition;
+extern crate tokio_file_unix;
 
 mod history;
 mod telnet_server;
 mod child;
 mod options;
+mod util;
 
 use std::{str};
 use std::cell::{RefCell};
@@ -28,9 +30,11 @@ use std::rc::{Rc};
 use std::sync::{Arc, Mutex};
 use std::io;
 use std::time::Duration;
+use std::fs::OpenOptions;
 
 use futures::{Future, Sink, Stream};
 use tokio_signal::unix::Signal;
+use tokio_io::io::write_all;
 
 use termios::*;
 
@@ -142,11 +146,27 @@ fn run(options: Options) {
 
     let telnet_server = telnet_server.server(core.handle());
 
-    let join = futures::future::join_all(vec![
-        Box::new(sigchld_handling) as Box<Future<Item=(), Error=()>>,
-        Box::new(proc_output) as Box<Future<Item=(), Error=()>>,
-        telnet_server,
-    ]).map(|_| ());
+    let mut joins = Vec::new();
+
+    if options.borrow().foreground {
+        let hr = HistoryReader::new(history.clone());
+        //let stdout = std::io::stdout();
+        //let file = tokio_file_unix::StdFile(stdout.lock()); //Does not work because of borrow
+        //let file = tokio_file_unix::File::new_nb(file).unwrap();
+        let file = OpenOptions::new().write(true).open("/dev/stdout").unwrap();
+        let file = tokio_file_unix::File::new_nb(file).unwrap();
+        let file = file.into_io(&handle).unwrap();
+        let hr = hr.fold(file, |file, msg| {
+            write_all(file, msg).map(|(file, _)| file)
+        }).map(|_|()).map_err(|_|());
+        joins.push(Box::new(hr) as Box<Future<Item=(), Error=()>>);
+    }
+
+    joins.push(Box::new(sigchld_handling) as Box<Future<Item=(), Error=()>>);
+    joins.push(Box::new(proc_output) as Box<Future<Item=(), Error=()>>);
+    joins.push(telnet_server);
+
+    let join = futures::future::join_all(joins).map(|_| ());
 
     let select = futures::future::select_all(vec![
         Box::new(join) as Box<Future<Item=(), Error=()>>,
