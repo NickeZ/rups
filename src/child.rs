@@ -120,6 +120,14 @@ impl Process {
         Err(ProcessError::NoChild)
     }
 
+    pub fn id(&self) -> Option<u32> {
+        if let Some(ref child) = self.child {
+            Some(child.id())
+        } else {
+            None
+        }
+    }
+
     pub fn set_window_size(&mut self, addr: SocketAddr, ws: (pty::Rows, pty::Columns)) {
         //println!("Store {:?},{:?} for {:?}", ws.0, ws.1, addr);
         self.window_sizes.insert(addr, ws);

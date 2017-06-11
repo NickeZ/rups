@@ -97,12 +97,16 @@ fn run(options: Options) {
         signal.fold(timer, |timer, signal| {
             trace!("got signal {:?}", signal);
             let child = child.clone();
-            child.lock().unwrap().wait().unwrap();
+            let child2 = child.clone();
+            let mut child_locked = child.lock().unwrap();
+            let pid = child_locked.id().unwrap();
+            let exitcode = child_locked.wait().unwrap();
+            println!("Received SIGCHLD for {}. {}", pid, exitcode);
             if options.borrow().autorestart {
-                println!("Subprocess died, will restart in {:.2}s", holdoff);
+                println!("Will restart in {:.2}s", holdoff);
                 let timeout = timer.sleep(Duration::new(sec as u64, nsec as u32))
                     .and_then(move |_| {
-                        match child.lock().unwrap().spawn() {
+                        match child2.lock().unwrap().spawn() {
                             Err(ProcessError::ProcessAlreadySpawned) => (),
                             Err(e) => println!("{:?}", e),
                             Ok(..) => (),
