@@ -202,22 +202,4 @@ fn run(options: Options) {
     match core.run(select) {
         _ => println!("Done"),
     };
-
-//    let mut prompt_input:Option<PipeReader> = None;
-//    if options.interactive {
-//        let old_termios = Termios::from_fd(libc::STDIN_FILENO).unwrap();
-//        let mut new_termios = old_termios;
-//        new_termios.c_lflag &= !(ICANON | ECHO);
-//        let _ = tcsetattr(libc::STDIN_FILENO, TCSANOW, &mut new_termios);
-//        prompt_input = Some(unsafe { PipeReader::from_raw_fd(libc::STDIN_FILENO)});
-//        match prompt_input {
-//            Some(ref prompt_input) => {
-//                poll.register(prompt_input, PROMPT_INPUT, Ready::readable(),
-//                            PollOpt::edge() | PollOpt::oneshot()).unwrap();
-//            },
-//            None => {},
-//        }
-//    }
-//
-
 }
