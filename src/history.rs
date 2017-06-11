@@ -55,7 +55,7 @@ impl History {
 
     pub fn push(&mut self, line:HistoryLine) {
         // TODO make asynchronous
-        let tmp:Vec<()> = self.logfiles.iter().map(|mut file| {
+        let _:Vec<()> = self.logfiles.iter().map(|mut file| {
             match line {
                 HistoryLine::Child{ref message} => {
                     file.write(message.as_slice()).unwrap();

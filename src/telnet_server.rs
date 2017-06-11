@@ -10,7 +10,6 @@ use futures::sync::mpsc;
 use futures::stream;
 use std::io;
 use std::vec::IntoIter;
-use std::path::PathBuf;
 
 use history::{History, HistoryReader};
 
@@ -62,8 +61,6 @@ impl TelnetServer {
         let togglecmd = self.options.borrow().togglecmd;
         let restartcmd = self.options.borrow().restartcmd;
         let logoutcmd = self.options.borrow().logoutcmd;
-        let autostart = self.options.borrow().autostart;
-        let autorestart = self.options.borrow().autorestart;
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
             println!("Connection {:?}", peer_addr);
             let (writer, reader) = socket.framed(TelnetCodec::new()).split();
@@ -71,8 +68,6 @@ impl TelnetServer {
             let process2 = process.clone();
             let options = options.clone();
             let options2 = options.clone();
-            let chdir = options.borrow().chdir.clone();
-            let started_at = options.borrow().started_at.clone();
 
             // Send all outputs from the process to the telnet client
             let from_process = HistoryReader::new(history.clone());
