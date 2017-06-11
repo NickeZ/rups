@@ -70,7 +70,7 @@ fn run(options: Options) {
     let handle = core.handle();
 
     let options = Rc::new(RefCell::new(options));
-    let history = Rc::new(RefCell::new(History::new(options.borrow().history_size)));
+    let history = Rc::new(RefCell::new(History::new(&options.borrow())));
 
     let timer = tokio_timer::Timer::default();
 

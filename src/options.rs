@@ -18,6 +18,7 @@ pub struct Options {
     pub holdoff: f64,
     pub binds: Option<Vec<SocketAddr>>,
     pub logbinds: Option<Vec<SocketAddr>>,
+    pub logfiles: Option<Vec<PathBuf>>,
     pub killcmd: u8,
     pub togglecmd: u8,
     pub restartcmd: u8,
@@ -43,6 +44,7 @@ impl Default for Options {
             holdoff: 5.0,
             binds: Some(addrs),
             logbinds: Some(logaddrs),
+            logfiles: None,
             killcmd: 0x18,
             togglecmd: 0x14,
             restartcmd: 0x12,
@@ -167,6 +169,10 @@ EXAMPLES:
             // TODO(nc): Interpret ip:port, port, unix socket
             let bindv = bindv.collect::<Vec<&str>>();
             options.logbinds = Some(bindv.iter().map(|b| b.parse().unwrap()).collect());
+        }
+        if let Some(pathv) = matches.values_of("logfile") {
+            let pathv = pathv.collect::<Vec<&str>>();
+            options.logfiles = Some(pathv.iter().map(|b| PathBuf::from(b)).collect());
         }
         if let Some(cmd) = matches.value_of("killcmd") {
             match parse_shortcut(cmd.as_bytes()) {

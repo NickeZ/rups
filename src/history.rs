@@ -1,12 +1,16 @@
 use std::io;
+use std::io::Write;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::vec_deque::Iter;
 use std::collections::VecDeque;
 use std::iter::Skip;
+use std::fs::{File, OpenOptions};
 
 use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
 use futures::task::{self, Task};
+
+use options::Options;
 
 #[derive(Debug, PartialEq)]
 pub enum HistoryLine {
@@ -20,16 +24,24 @@ pub struct History {
     histsize: usize,
     offset: usize,
     tasks: Vec<Task>,
+    logfiles: Vec<File>,
 }
 
 impl History {
-    pub fn new(histsize:usize) -> History {
-        let buf = VecDeque::with_capacity(histsize);
+    pub fn new(options: &Options) -> History {
+        let buf = VecDeque::with_capacity(options.history_size);
+        let logfiles = options.logfiles.as_ref().map_or(Vec::new(), |logfiles| {
+            logfiles.iter().map(|file| {
+                OpenOptions::new().write(true).create(true).open(file).expect("Failed to open logfile")
+            }).collect()
+        });
+
         History {
             buffers: buf,
-            histsize: histsize,
+            histsize: options.history_size,
             offset: 0,
             tasks: Vec::new(),
+            logfiles: logfiles,
         }
     }
 
@@ -44,6 +56,15 @@ impl History {
     }
 
     pub fn push(&mut self, line:HistoryLine) {
+        // TODO make asynchronous
+        let tmp:Vec<()> = self.logfiles.iter().map(|mut file| {
+            match line {
+                HistoryLine::Child{ref message} => {
+                    file.write(message.as_slice()).unwrap();
+                },
+                //_ => (),
+            }
+        }).collect();
         if self.buffers.len() >= self.histsize {
             self.buffers.pop_front();
             self.offset += 1;
