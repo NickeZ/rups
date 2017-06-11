@@ -19,9 +19,10 @@ pub struct Options {
     pub binds: Vec<SocketAddr>,
     pub logbinds: Vec<SocketAddr>,
     pub logfiles: Vec<PathBuf>,
-    pub killcmd: u8,
-    pub togglecmd: u8,
-    pub restartcmd: u8,
+    pub killcmd: Option<u8>,
+    pub togglecmd: Option<u8>,
+    pub restartcmd: Option<u8>,
+    pub logoutcmd: Option<u8>,
     pub chdir: PathBuf,
     // Not really an option.. but lets store it here for now..
     pub started_at: String,
@@ -45,9 +46,10 @@ impl Default for Options {
             binds: addrs,
             logbinds: logaddrs,
             logfiles: Vec::new(),
-            killcmd: 0x18,
-            togglecmd: 0x14,
-            restartcmd: 0x12,
+            killcmd: Some(0x18),
+            togglecmd: Some(0x14),
+            restartcmd: Some(0x12),
+            logoutcmd: None,
             chdir: ::std::env::current_dir().expect("Failed to get pwd"),
             started_at: time::strftime("%a, %d %b %Y %T %z", &time::now()).expect("Failed to format time"),
         }
@@ -124,6 +126,11 @@ impl Options {
                 .long("restartcmd")
                 .help("Command to start the process")
                 .takes_value(true))
+            .arg(Arg::with_name("logoutcmd")
+                .short("x")
+                .long("logoutcmd")
+                .help("Command to logout client connection")
+                .takes_value(true))
             .arg(Arg::with_name("chdir")
                 .short("c")
                 .long("chdir")
@@ -189,6 +196,12 @@ EXAMPLES:
                 Err(..) => println!("Failed to parse {}", cmd),
             }
         }
+        if let Some(cmd) = matches.value_of("logoutcmd") {
+            match parse_shortcut(cmd.as_bytes()) {
+                Ok(cmd) => options.logoutcmd = cmd,
+                Err(..) => println!("Failed to parse {}", cmd),
+            }
+        }
         if let Some(chdir) = matches.value_of("chdir") {
             let chdir = PathBuf::from(chdir);
             if ! chdir.is_dir() {
@@ -210,10 +223,11 @@ EXAMPLES:
 }
 
 // Parses ^[a-zA-Z] to the correct control code
-fn parse_shortcut(buf: &[u8]) -> Result<u8,()> {
+fn parse_shortcut(buf: &[u8]) -> Result<Option<u8>,()> {
     match buf.len() {
-        2  if buf[0] == b'^' && buf[1] >= b'A' && buf[1] <= b'z' => Ok(0x1f & buf[1]),
-        1  if buf[0] >= b'A' && buf[0] <= b'z' => Ok(buf[0]),
+        2  if buf[0] == b'^' && buf[1] >= b'A' && buf[1] <= b'z' => Ok(Some(0x1f & buf[1])),
+        1  if buf[0] >= b'A' && buf[0] <= b'z' => Ok(Some(buf[0])),
+        0 => Ok(None),
         _ => Err(()),
     }
 }

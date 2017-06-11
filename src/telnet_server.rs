@@ -61,6 +61,7 @@ impl TelnetServer {
         let killcmd = self.options.borrow().killcmd;
         let togglecmd = self.options.borrow().togglecmd;
         let restartcmd = self.options.borrow().restartcmd;
+        let logoutcmd = self.options.borrow().logoutcmd;
         let autostart = self.options.borrow().autostart;
         let autorestart = self.options.borrow().autorestart;
         let sserver = listener.incoming().for_each(move |(socket, peer_addr)| {
@@ -69,6 +70,7 @@ impl TelnetServer {
             let process = process.clone();
             let process2 = process.clone();
             let options = options.clone();
+            let options2 = options.clone();
             let chdir = options.borrow().chdir.clone();
             let started_at = options.borrow().started_at.clone();
 
@@ -76,7 +78,7 @@ impl TelnetServer {
             let from_process = HistoryReader::new(history.clone());
             let server = writer
                 .send_all(init_commands())
-                .and_then(move |(rx, _tx)| rx.send_all(motd(killcmd, togglecmd, restartcmd, autostart, autorestart, chdir, started_at, process2)))
+                .and_then(move |(rx, _tx)| rx.send_all(motd(options2, process2)))
                 .and_then(|(rx, _tx)| rx.send_all(from_process))
                 .then(|_| Ok(()));
 
@@ -95,22 +97,34 @@ impl TelnetServer {
                         if text.len() == 1 {
                             trace!("Received {:?}", text);
                             let cmd = text[0];
-                            if cmd == restartcmd {
-                                debug!("Receieved relaunch command");
-                                let mut process = process.lock().unwrap();
-                                let _ = process.spawn();
-                                return None
+                            if let Some(restartcmd) = restartcmd {
+                                if cmd == restartcmd {
+                                    debug!("Receieved relaunch command");
+                                    let mut process = process.lock().unwrap();
+                                    let _ = process.spawn();
+                                    return None
+                                }
                             }
-                            if cmd == togglecmd {
-                                options.borrow_mut().toggle_autorestart();
-                                debug!("Receieved toggle autorestart command");
-                                return None
+                            if let Some(togglecmd) = togglecmd {
+                                if cmd == togglecmd {
+                                    options.borrow_mut().toggle_autorestart();
+                                    debug!("Receieved toggle autorestart command");
+                                    return None
+                                }
                             }
-                            if cmd == killcmd {
-                                debug!("Received kill command");
-                                let mut process = process.lock().unwrap();
-                                process.kill().unwrap();
-                                return None
+                            if let Some(killcmd) = killcmd {
+                                if cmd == killcmd {
+                                    debug!("Received kill command");
+                                    let mut process = process.lock().unwrap();
+                                    process.kill().unwrap();
+                                    return None
+                                }
+                            }
+                            if let Some(logoutcmd) = logoutcmd {
+                                if cmd == logoutcmd {
+                                    debug!("Received logout command");
+                                    return Some("TODO".as_bytes().to_vec())
+                                }
                             }
                         }
                         return Some(text)
@@ -170,13 +184,7 @@ fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
                       Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
 }
 pub fn motd(
-    killcmd: u8,
-    togglecmd: u8,
-    restartcmd: u8,
-    autostart: bool,
-    autorestart: bool,
-    chdir: PathBuf,
-    started_at: String,
+    options: Rc<RefCell<Options>>,
     process: Arc<Mutex<child::Process>>,
     ) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>>
 {
@@ -185,18 +193,21 @@ pub fn motd(
     } else {
         "Not started yet".to_owned()
     };
+    let options = options.borrow();
     stream::iter(
         vec![Ok(b"\x1B[33m".to_vec()),
              Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
-             Ok(format!("Auto start is {}, Auto restart is {}\r\n", autostart, autorestart).into_bytes()),
+             Ok(format!("Auto start is {}, Auto restart is {}\r\n", options.autostart, options.autorestart).into_bytes()),
              Ok(format!("{} to kill the child, {} to toggle auto restart\r\n",
-                        format_shortcut(killcmd),
-                        format_shortcut(togglecmd)).into_bytes()),
+                        format_shortcut(options.killcmd),
+                        format_shortcut(options.togglecmd)).into_bytes()),
              Ok(format!("{} to (re)start the child\r\n",
-                        format_shortcut(restartcmd)).into_bytes()),
-             Ok(format!("Child working dir: {}\r\n", chdir.display()).into_bytes()),
+                        format_shortcut(options.restartcmd)).into_bytes()),
+             Ok(format!("{} to logout\r\n",
+                        format_shortcut(options.logoutcmd)).into_bytes()),
+             Ok(format!("Child working dir: {}\r\n", options.chdir.display()).into_bytes()),
              Ok(b"The server was started at: ".to_vec()),
-             Ok(started_at.as_bytes().to_vec()),
+             Ok(options.started_at.as_bytes().to_vec()),
              Ok(b"\r\n".to_vec()),
              Ok(b"The child was started at: ".to_vec()),
              Ok(child_started_at.as_bytes().to_vec()),
@@ -205,18 +216,21 @@ pub fn motd(
     )
 }
 
-pub fn format_shortcut(cmd: u8) -> String {
+pub fn format_shortcut(cmd: Option<u8>) -> String {
     match cmd {
-        c if c < 32 => {
+        Some(c) if c < 32 => {
             let mut s = String::with_capacity(2);
             s.insert(0, '^');
             s.insert(1, (0x40 | c) as char);
             s
         },
-        c => {
+        Some(c) => {
             let mut s = String::with_capacity(1);
             s.insert(0, c as char);
             s
+        },
+        None => {
+            String::from("disabled")
         }
     }
 }
