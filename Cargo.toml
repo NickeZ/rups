@@ -24,12 +24,8 @@ tokio-signal = "0.1"
 tokio-timer = "0.1"
 bytes = "0.4"
 tokio-file-unix = "0.4"
+pty = {path = "pty"}
+rust-telnet = {path = "rust-telnet"}
+futures-addition = {path = "futures-addition"}
 
-[dependencies.pty]
-path = "pty"
-
-[dependencies.rust-telnet]
-path = "rust-telnet"
-
-[dependencies.futures-addition]
-path = "futures-addition"
+[workspace]
