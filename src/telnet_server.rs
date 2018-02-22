@@ -173,15 +173,15 @@ impl TelnetServer {
     }
 }
 
-fn init_commands() -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>> {
-    stream::iter(vec![Ok(vec![IAC::IAC, IAC::WILL, OPTION::ECHO]),
-                      Ok(vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD]),
-                      Ok(vec![IAC::IAC, IAC::DO,   OPTION::NAWS])])
+fn init_commands() -> stream::IterOk<IntoIter<Vec<u8>>, io::Error> {
+    stream::iter_ok(vec![vec![IAC::IAC, IAC::WILL, OPTION::ECHO],
+                      vec![IAC::IAC, IAC::WILL, OPTION::SUPPRESS_GO_AHEAD],
+                      vec![IAC::IAC, IAC::DO,   OPTION::NAWS]])
 }
 pub fn motd(
     options: Rc<RefCell<Options>>,
     process: Arc<Mutex<child::Process>>,
-    ) -> stream::Iter<IntoIter<Result<Vec<u8>, io::Error>>>
+    ) -> stream::IterOk<IntoIter<Vec<u8>>, io::Error>
 {
     let child_started_at = if let Some(started_at) = process.lock().unwrap().started_at() {
         started_at.clone()
@@ -189,25 +189,25 @@ pub fn motd(
         "Not started yet".to_owned()
     };
     let options = options.borrow();
-    stream::iter(
-        vec![Ok(b"\x1B[33m".to_vec()),
-             Ok(b"Welcome to Simple Process Server 0.0.1\r\n".to_vec()),
-             Ok(format!("Auto start is {}, Auto restart is {}\r\n", options.autostart, options.autorestart).into_bytes()),
-             Ok(format!("{} to kill the child, {} to toggle auto restart\r\n",
-                        format_shortcut(options.killcmd),
-                        format_shortcut(options.togglecmd)).into_bytes()),
-             Ok(format!("{} to (re)start the child\r\n",
-                        format_shortcut(options.restartcmd)).into_bytes()),
-             Ok(format!("{} to logout\r\n",
-                        format_shortcut(options.logoutcmd)).into_bytes()),
-             Ok(format!("Child working dir: {}\r\n", options.chdir.display()).into_bytes()),
-             Ok(b"The server was started at: ".to_vec()),
-             Ok(options.started_at.as_bytes().to_vec()),
-             Ok(b"\r\n".to_vec()),
-             Ok(b"The child was started at: ".to_vec()),
-             Ok(child_started_at.as_bytes().to_vec()),
-             Ok(b"\r\n".to_vec()),
-             Ok(b"\x1B[0m".to_vec())]
+    stream::iter_ok(
+        vec![b"\x1B[33m".to_vec(),
+             b"Welcome to Simple Process Server 0.0.1\r\n".to_vec(),
+             format!("Auto start is {}, Auto restart is {}\r\n", options.autostart, options.autorestart).into_bytes(),
+             format!("{} to kill the child, {} to toggle auto restart\r\n",
+                     format_shortcut(options.killcmd),
+                     format_shortcut(options.togglecmd)).into_bytes(),
+             format!("{} to (re)start the child\r\n",
+                     format_shortcut(options.restartcmd)).into_bytes(),
+             format!("{} to logout\r\n",
+                     format_shortcut(options.logoutcmd)).into_bytes(),
+             format!("Child working dir: {}\r\n", options.chdir.display()).into_bytes(),
+             b"The server was started at: ".to_vec(),
+             options.started_at.as_bytes().to_vec(),
+             b"\r\n".to_vec(),
+             b"The child was started at: ".to_vec(),
+             child_started_at.as_bytes().to_vec(),
+             b"\r\n".to_vec(),
+             b"\x1B[0m".to_vec()]
     )
 }
 

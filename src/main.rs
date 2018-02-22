@@ -24,7 +24,6 @@ mod child;
 mod options;
 mod util;
 
-use std::{str};
 use std::cell::{RefCell};
 use std::rc::{Rc};
 use std::sync::{Arc, Mutex};
@@ -35,6 +34,8 @@ use std::fs::OpenOptions;
 use futures::{Future, Sink, Stream};
 use tokio_signal::unix::Signal;
 use tokio_io::io::write_all;
+
+use pty::PtyStreamError;
 
 use termios::*;
 
@@ -131,7 +132,13 @@ fn run(options: Options) {
     let proc_output = child_readers
         .for_each(|reader| {
             let hw = HistoryWriter::new(history.clone());
-            hw.send_all(reader).map(|_|()).or_else(|_|{
+            hw.send_all(reader.map_err(|e| {
+                match e {
+                    PtyStreamError::IoError(e) => e,
+                    _ => io::Error::new(io::ErrorKind::Other, "oops"),
+                }
+
+            })).map(|_|()).or_else(|_|{
                 Ok(())
             })
         }).map_err(|_|());

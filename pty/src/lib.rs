@@ -10,7 +10,6 @@ use std::os::unix::process::CommandExt;
 use std::os::unix::io::{RawFd, FromRawFd};
 use std::ptr;
 use std::process;
-use std::fs;
 
 use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll, Future};
 use futures::sync::oneshot;
@@ -20,18 +19,6 @@ use tokio_core::reactor::{Handle, PollEvented};
 
 use futures_addition::send_all::HasItem;
 
-#[allow(dead_code)]
-fn printfds(prefix: &str) {
-    for entry in fs::read_dir("/proc/self/fd").unwrap() {
-        let entry = entry.unwrap();
-        if let Ok(canon_path) = fs::canonicalize(entry.path()) {
-            let path = entry.path();
-            debug!("{}: {:?} {:?}", prefix, path, canon_path);
-        }
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -40,6 +27,17 @@ mod tests {
     use futures::Future;
 
     const STIMULI: [u8; 5] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8, '\x04' as u8];
+
+    fn printfds(prefix: &str) {
+        use std::fs;
+        for entry in fs::read_dir("/proc/self/fd").unwrap() {
+            let entry = entry.unwrap();
+            if let Ok(canon_path) = fs::canonicalize(entry.path()) {
+                let path = entry.path();
+                debug!("{}: {:?} {:?}", prefix, path, canon_path);
+            }
+        }
+    }
 
     #[test]
     fn it_works() {
@@ -58,11 +56,23 @@ mod tests {
         let output = child.output().take().unwrap().for_each(|x| {
             print!("OUT {}", String::from_utf8(x).unwrap());
             Ok(())
+        }).then(|r| {
+            match r {
+                Err(PtyStreamError::IoError(e)) => Err(e),
+                Err(PtyStreamError::ProcessDied) => Ok(()),
+                _ => Ok(()),
+            }
         });
 
         let input = child.input().take().unwrap()
             .send(stim)
-            .and_then(|f| f.flush());
+            .and_then(|f| f.flush())
+            .then(|r| {
+                match r {
+                    Err(PtySinkError::IoError(e)) => Err(e),
+                    _ => Ok(()),
+                }
+            });
 
         if log_enabled!(log::LogLevel::Debug){
             printfds("before core");
@@ -145,20 +155,12 @@ impl Pty {
                     libc::signal(libc::SIGALRM, libc::SIG_DFL);
                 }
 
-                if log_enabled!(log::LogLevel::Debug) {
-                    printfds("child before exec");
-                }
-
                 Ok(())
             });
 
         let child = command.spawn()?;
 
         let master2 = cvt(unsafe {libc::dup(master)})?;
-
-        if log_enabled!(log::LogLevel::Debug) {
-            printfds("parent after fork");
-        }
 
         let (stream_done_tx, stream_done_rx) = oneshot::channel::<i32>();
         let io = stdio(master, handle);
@@ -278,7 +280,7 @@ pub fn get_winsize(fd: RawFd) -> io::Result<libc::winsize> {
     };
     unsafe {
         cvt(libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws))?;
-        Ok((ws))
+        Ok(ws)
     }
 }
 
@@ -293,6 +295,18 @@ pub fn set_winsize(fd: RawFd, ws: &libc::winsize) -> io::Result<()> {
  * ===== Pipe =====
  *
  */
+
+#[derive(Debug)]
+pub enum PtyStreamError {
+    IoError(io::Error),
+    ProcessDied,
+}
+
+impl From<io::Error> for PtyStreamError {
+    fn from(error: io::Error) -> Self {
+        PtyStreamError::IoError(error)
+    }
+}
 
 pub struct PtyStream {
     ptyio: PtyIo,
@@ -310,12 +324,12 @@ impl PtyStream {
 
 impl Stream for PtyStream {
     type Item = Vec<u8>;
-    type Error = io::Error;
+    type Error = PtyStreamError;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
         let mut buf = [0 as u8;2048];
         match self.done.poll() {
-            Ok(Async::Ready(..)) => return Err(io::Error::new(io::ErrorKind::Other, "died")),
+            Ok(Async::Ready(..)) => return Err(io::Error::new(io::ErrorKind::Other, "died").into()),
             _ => (),
         }
         match self.ptyio.read(&mut buf) {
@@ -335,11 +349,11 @@ impl Stream for PtyStream {
                 if e.kind() == io::ErrorKind::Other {
                     // Process probably exited
                     warn!("Failed to read from {:?}: {:?}, process died?", self.ptyio, e);
-                    return Err(e);
+                    return Err(PtyStreamError::ProcessDied);
                     //return Ok(Async::Ready(None));
                 }
                 warn!("Failed to read: {:?}", e);
-                return Err(e);
+                return Err(e.into());
             },
         }
     }
