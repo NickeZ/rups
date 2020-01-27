@@ -1,15 +1,14 @@
 #[test]
-fn it_works() {
-}
+fn it_works() {}
 
-use std::{io};
+use std::io;
 use std::io::Cursor;
 
-use tokio_io::codec;
 use byteorder::{BigEndian, ReadBytesExt};
-use bytes::{BytesMut, BufMut};
+use bytes::{BufMut, BytesMut};
+use tokio_io::codec;
 
-use crate::parser::{TelnetTokenizer, TelnetToken};
+use crate::parser::{TelnetToken, TelnetTokenizer};
 
 #[allow(non_snake_case)]
 pub mod IAC {
@@ -23,22 +22,22 @@ pub mod IAC {
     pub const WONT: u8 = 252;
     pub const DO: u8 = 253;
     pub const DONT: u8 = 254;
-    pub const IAC:u8 = 255;
+    pub const IAC: u8 = 255;
 }
 
 #[allow(non_snake_case)]
 pub mod OPTION {
     // Standard
-    pub const EXOPL:u8 = 255;
-    pub const TRANSMIT_BINARY:u8 = 0;
-    pub const ECHO:u8 = 1;
-    pub const SUPPRESS_GO_AHEAD:u8 = 3;
-    pub const STATUS:u8 = 5;
-    pub const TIMING_MARK:u8 = 6;
+    pub const EXOPL: u8 = 255;
+    pub const TRANSMIT_BINARY: u8 = 0;
+    pub const ECHO: u8 = 1;
+    pub const SUPPRESS_GO_AHEAD: u8 = 3;
+    pub const STATUS: u8 = 5;
+    pub const TIMING_MARK: u8 = 6;
     // Draft
-    pub const LINEMODE:u8 = 34;
+    pub const LINEMODE: u8 = 34;
     // Proposed
-    pub const NAWS:u8 = 31;
+    pub const NAWS: u8 = 31;
 }
 
 enum TelnetCodecMode {
@@ -60,9 +59,9 @@ impl TelnetCodec {
 
 #[derive(Clone)]
 pub enum TelnetIn {
-    Text {text:Vec<u8>},
+    Text { text: Vec<u8> },
     Carriage,
-    NAWS {rows:u16, columns:u16},
+    NAWS { rows: u16, columns: u16 },
 }
 //pub struct TelnetOut;
 
@@ -90,7 +89,11 @@ impl codec::Encoder for TelnetCodec {
         let len = item.len();
         if dst.remaining_mut() < len {
             let increase = ::std::cmp::max(dst.capacity(), len);
-            debug!("increasing BytesMut with {} from {}", increase, dst.capacity());
+            debug!(
+                "increasing BytesMut with {} from {}",
+                increase,
+                dst.capacity()
+            );
             dst.reserve(increase);
         }
         for c in item {
@@ -124,58 +127,58 @@ impl Decoder {
                     match self.mode {
                         TelnetCodecMode::Text => {
                             //println!("text {:?} {}", bytes, str::from_utf8(bytes).unwrap_or(""));
-                            res = Ok(Some(TelnetIn::Text{text: bytes.to_vec()}));
+                            res = Ok(Some(TelnetIn::Text {
+                                text: bytes.to_vec(),
+                            }));
                             break;
-                        },
+                        }
                         TelnetCodecMode::NAWS => {
                             let mut rdr = Cursor::new(bytes);
                             let cols = From::from(rdr.read_u16::<BigEndian>().unwrap());
                             let rows = From::from(rdr.read_u16::<BigEndian>().unwrap());
-                            res = Ok(Some(TelnetIn::NAWS{rows: rows, columns: cols}));
+                            res = Ok(Some(TelnetIn::NAWS {
+                                rows: rows,
+                                columns: cols,
+                            }));
                             break;
                         }
                     }
-
-                },
-                TelnetToken::Command(command) => {
-                    match command {
-                        IAC::SE => {
-                            debug!("RX: Negotiation SE");
-                            match self.mode {
-                                TelnetCodecMode::NAWS => {
-                                    self.mode = TelnetCodecMode::Text;
-                                },
-                                _ => (),
+                }
+                TelnetToken::Command(command) => match command {
+                    IAC::SE => {
+                        debug!("RX: Negotiation SE");
+                        match self.mode {
+                            TelnetCodecMode::NAWS => {
+                                self.mode = TelnetCodecMode::Text;
                             }
-                        },
-                        command => warn!("unhandled command {:?}", command),
+                            _ => (),
+                        }
                     }
+                    command => warn!("unhandled command {:?}", command),
                 },
-                TelnetToken::Negotiation{command, channel} => {
-                    match (command, channel) {
-                        (IAC::DO, OPTION::ECHO) => {
-                            debug!("RX: Negotiation DO ECHO");
-                            self.server_echo = true
-                        },
-                        (IAC::DONT, OPTION::ECHO) => {
-                            debug!("RX: Negotiation DONT ECHO");
-                            self.server_echo = false
-                        },
-                        (IAC::DO, OPTION::SUPPRESS_GO_AHEAD) => {
-                            debug!("RX: Negotiation DO SUPPRESS_GO_AHEAD");
-                        },
-                        (IAC::DONT, OPTION::SUPPRESS_GO_AHEAD) => {
-                            debug!("RX: Negotiation DONT SUPPRESS_GO_AHEAD");
-                        },
-                        (IAC::WILL, OPTION::NAWS) => {
-                            debug!("RX: Negotiation WILL NAWS");
-                        },
-                        (IAC::SB, OPTION::NAWS) => {
-                            debug!("RX: Negotiation SB NAWS");
-                            self.mode = TelnetCodecMode::NAWS;
-                        },
-                        (_, _) => warn!("unhandled negotiation {:?} {:?}", command, channel),
+                TelnetToken::Negotiation { command, channel } => match (command, channel) {
+                    (IAC::DO, OPTION::ECHO) => {
+                        debug!("RX: Negotiation DO ECHO");
+                        self.server_echo = true
                     }
+                    (IAC::DONT, OPTION::ECHO) => {
+                        debug!("RX: Negotiation DONT ECHO");
+                        self.server_echo = false
+                    }
+                    (IAC::DO, OPTION::SUPPRESS_GO_AHEAD) => {
+                        debug!("RX: Negotiation DO SUPPRESS_GO_AHEAD");
+                    }
+                    (IAC::DONT, OPTION::SUPPRESS_GO_AHEAD) => {
+                        debug!("RX: Negotiation DONT SUPPRESS_GO_AHEAD");
+                    }
+                    (IAC::WILL, OPTION::NAWS) => {
+                        debug!("RX: Negotiation WILL NAWS");
+                    }
+                    (IAC::SB, OPTION::NAWS) => {
+                        debug!("RX: Negotiation SB NAWS");
+                        self.mode = TelnetCodecMode::NAWS;
+                    }
+                    (_, _) => warn!("unhandled negotiation {:?} {:?}", command, channel),
                 },
             }
         }

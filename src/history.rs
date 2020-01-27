@@ -1,20 +1,20 @@
-use std::io;
-use std::io::Write;
-use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::vec_deque::Iter;
 use std::collections::VecDeque;
-use std::iter::Skip;
 use std::fs::{File, OpenOptions};
+use std::io;
+use std::io::Write;
+use std::iter::Skip;
+use std::rc::Rc;
 
-use futures::{Stream, Sink, Poll, StartSend, Async, AsyncSink};
 use futures::task::{self, Task};
+use futures::{Async, AsyncSink, Poll, Sink, StartSend, Stream};
 
 use options::Options;
 
 #[derive(Debug, PartialEq)]
 pub enum HistoryLine {
-    Child {message: Vec<u8>},
+    Child { message: Vec<u8> },
     //Command (Vec<u8>),
     //Info {message: String},
 }
@@ -30,9 +30,17 @@ pub struct History {
 impl History {
     pub fn new(options: &Options) -> History {
         let buf = VecDeque::with_capacity(options.history_size);
-        let logfiles = options.logfiles.iter().map(|file| {
-            OpenOptions::new().write(true).create(true).open(file).expect("Failed to open logfile")
-        }).collect();
+        let logfiles = options
+            .logfiles
+            .iter()
+            .map(|file| {
+                OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(file)
+                    .expect("Failed to open logfile")
+            })
+            .collect();
 
         History {
             buffers: buf,
@@ -53,16 +61,19 @@ impl History {
         }
     }
 
-    pub fn push(&mut self, line:HistoryLine) {
+    pub fn push(&mut self, line: HistoryLine) {
         // TODO make asynchronous
-        let _:Vec<()> = self.logfiles.iter().map(|mut file| {
-            match line {
-                HistoryLine::Child{ref message} => {
-                    file.write(message.as_slice()).unwrap();
-                },
-                //_ => (),
-            }
-        }).collect();
+        let _: Vec<()> = self
+            .logfiles
+            .iter()
+            .map(|mut file| {
+                match line {
+                    HistoryLine::Child { ref message } => {
+                        file.write(message.as_slice()).unwrap();
+                    } //_ => (),
+                }
+            })
+            .collect();
         if self.buffers.len() >= self.histsize {
             self.buffers.pop_front();
             self.offset += 1;
@@ -71,7 +82,7 @@ impl History {
         trace!("buffers are now: {:?}", self.buffers);
     }
 
-    pub fn get_from(&self, index:usize) -> Skip<Iter<HistoryLine>> {
+    pub fn get_from(&self, index: usize) -> Skip<Iter<HistoryLine>> {
         let idx = if index < self.offset {
             0
         } else {
@@ -92,9 +103,7 @@ pub struct HistoryWriter {
 
 impl HistoryWriter {
     pub fn new(history: Rc<RefCell<History>>) -> HistoryWriter {
-        HistoryWriter {
-            history: history,
-        }
+        HistoryWriter { history: history }
     }
 }
 
@@ -104,7 +113,7 @@ impl Sink for HistoryWriter {
 
     fn start_send(&mut self, item: Self::SinkItem) -> StartSend<Self::SinkItem, Self::SinkError> {
         let mut history = self.history.borrow_mut();
-        history.push(HistoryLine::Child{message: item});
+        history.push(HistoryLine::Child { message: item });
         history.unpark();
         Ok(AsyncSink::Ready)
     }
@@ -142,10 +151,10 @@ impl Stream for HistoryReader {
         let mut res = Vec::new();
         for entry in history.get_from(self.index) {
             match entry {
-                &HistoryLine::Child{ref message} => {
+                &HistoryLine::Child { ref message } => {
                     let mut content = message.clone();
                     res.append(&mut content);
-                },
+                }
                 //&HistoryLine::Command(ref cmd) => {
                 //    let mut content = cmd.clone();
                 //    res.append(&mut content);

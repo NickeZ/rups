@@ -1,6 +1,6 @@
-use futures::sync::mpsc;
 use futures::stream::Stream;
-use futures::{Poll, Async};
+use futures::sync::mpsc;
+use futures::{Async, Poll};
 use std::clone::Clone;
 
 pub struct ReceiverWrapper<T> {
@@ -28,7 +28,7 @@ impl<T: Clone> Stream for ReceiverWrapper<T> {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         if let Some(item) = self.last_item.take() {
-            return Ok(Async::Ready(Some(item)))
+            return Ok(Async::Ready(Some(item)));
         }
         self.inner.poll()
     }

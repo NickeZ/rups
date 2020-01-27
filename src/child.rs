@@ -1,21 +1,21 @@
-use std::process;
-use std::cell::{RefCell};
-use std::rc::{Rc};
-use std::sync::{Arc, Mutex};
-use std::error::{Error};
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::error::Error;
 use std::io;
+use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::process;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
-use futures::{Stream, Poll, Async};
 use futures::task::{self, Task};
+use futures::{Async, Poll, Stream};
 
 use pty;
-use tokio_core::reactor::Handle;
 use time;
+use tokio_core::reactor::Handle;
 
-use history::{History};
+use history::History;
 
 #[derive(Debug)]
 pub enum ProcessError {
@@ -49,7 +49,13 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(args:Vec<String>, chdir:PathBuf, history:Rc<RefCell<History>>, foreground:bool, handle: Handle) -> Process {
+    pub fn new(
+        args: Vec<String>,
+        chdir: PathBuf,
+        history: Rc<RefCell<History>>,
+        foreground: bool,
+        handle: Handle,
+    ) -> Process {
         Process {
             args: args,
             chdir: chdir,
@@ -95,7 +101,10 @@ impl Process {
                 if let Some(task) = self.pw_task.take() {
                     task.notify();
                 }
-                self.started_at = Some(time::strftime("%a, %d %b %Y %T %z", &time::now()).expect("Failed to format time"));
+                self.started_at = Some(
+                    time::strftime("%a, %d %b %Y %T %z", &time::now())
+                        .expect("Failed to format time"),
+                );
                 println!("Launched {}", self.args[0]);
             }
         };
@@ -115,7 +124,7 @@ impl Process {
 
     pub fn kill(&mut self) -> Result<(), ProcessError> {
         if let Some(ref mut child) = self.child {
-            return child.kill().map_err(|e| From::from(e))
+            return child.kill().map_err(|e| From::from(e));
         }
         Err(ProcessError::NoChild)
     }
@@ -160,9 +169,7 @@ pub struct ProcessWriters {
 
 impl ProcessWriters {
     pub fn new(inner: Arc<Mutex<Process>>) -> ProcessWriters {
-        ProcessWriters {
-            inner: inner,
-        }
+        ProcessWriters { inner: inner }
     }
 }
 
@@ -185,9 +192,7 @@ pub struct ProcessReaders {
 
 impl ProcessReaders {
     pub fn new(inner: Arc<Mutex<Process>>) -> ProcessReaders {
-        ProcessReaders {
-            inner: inner,
-        }
+        ProcessReaders { inner: inner }
     }
 }
 
