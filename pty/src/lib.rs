@@ -2,19 +2,20 @@ extern crate futures;
 extern crate libc;
 extern crate mio;
 extern crate tokio_core;
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate futures_addition;
 
 use std::io::{self, Read, Write};
+use std::os::unix::io::{FromRawFd, RawFd};
 use std::os::unix::process::CommandExt;
-use std::os::unix::io::{RawFd, FromRawFd};
-use std::ptr;
 use std::process;
+use std::ptr;
 
-use futures::{Stream, Sink, StartSend, AsyncSink, Async, Poll, Future};
 use futures::sync::oneshot;
-use mio::{Evented, PollOpt, Ready, Token};
+use futures::{Async, AsyncSink, Future, Poll, Sink, StartSend, Stream};
 use mio::unix::{EventedFd, UnixReady};
+use mio::{Evented, PollOpt, Ready, Token};
 use tokio_core::reactor::{Handle, PollEvented};
 
 use futures_addition::send_all::HasItem;
@@ -23,8 +24,8 @@ use futures_addition::send_all::HasItem;
 mod tests {
     use super::*;
     extern crate env_logger;
-    use tokio_core::reactor::Core;
     use futures::Future;
+    use tokio_core::reactor::Core;
 
     const STIMULI: [u8; 5] = ['h' as u8, 'e' as u8, 'j' as u8, '\n' as u8, '\x04' as u8];
 
@@ -45,7 +46,7 @@ mod tests {
         let mut core = Core::new().unwrap();
         let handle = core.handle();
 
-        let pty = ::Pty::new();
+        let pty = crate::Pty::new();
         let mut child = pty.spawn(process::Command::new("cat"), &handle).unwrap();
 
         let mut stim = Vec::new();
@@ -53,28 +54,32 @@ mod tests {
             stim.push(c.clone());
         }
 
-        let output = child.output().take().unwrap().for_each(|x| {
-            print!("OUT {}", String::from_utf8(x).unwrap());
-            Ok(())
-        }).then(|r| {
-            match r {
+        let output = child
+            .output()
+            .take()
+            .unwrap()
+            .for_each(|x| {
+                print!("OUT {}", String::from_utf8(x).unwrap());
+                Ok(())
+            })
+            .then(|r| match r {
                 Err(PtyStreamError::IoError(e)) => Err(e),
                 Err(PtyStreamError::ProcessDied) => Ok(()),
                 _ => Ok(()),
-            }
-        });
-
-        let input = child.input().take().unwrap()
-            .send(stim)
-            .and_then(|f| f.flush())
-            .then(|r| {
-                match r {
-                    Err(PtySinkError::IoError(e)) => Err(e),
-                    _ => Ok(()),
-                }
             });
 
-        if log_enabled!(log::LogLevel::Debug){
+        let input = child
+            .input()
+            .take()
+            .unwrap()
+            .send(stim)
+            .and_then(|f| f.flush())
+            .then(|r| match r {
+                Err(PtySinkError::IoError(e)) => Err(e),
+                _ => Ok(()),
+            });
+
+        if log_enabled!(log::LogLevel::Debug) {
             printfds("before core");
         }
 
@@ -105,8 +110,7 @@ pub struct Pty {
 }
 
 impl Pty {
-    pub fn new() -> Pty
-    {
+    pub fn new() -> Pty {
         let (master, slave) = openpty(24u16, 80u16);
         debug!("ptm: {}, pts: {}", master, slave);
         //unsafe {
@@ -120,8 +124,7 @@ impl Pty {
         }
     }
 
-    pub fn spawn(mut self, mut command: process::Command, handle: &Handle) -> io::Result<Child>
-    {
+    pub fn spawn(mut self, mut command: process::Command, handle: &Handle) -> io::Result<Child> {
         debug!("spawning {:?}", command);
         let (master, slave) = (self.master, self.slave.take().unwrap());
         // Box up the slave interface so that it is moved safely to the child process.
@@ -131,36 +134,35 @@ impl Pty {
         let childin = unsafe { process::Stdio::from_raw_fd(slave) };
         let childout = unsafe { process::Stdio::from_raw_fd(slave) };
         let slave = unsafe { process::Stdio::from_raw_fd(slave) };
-        command.stdin(childin)
-            .stdout(childout)
-            .stderr(slave)
-            .before_exec(move || {
-                // Make this process leader of new session
-                let slave = *child_slave;
-                set_sessionid()?;
-                // Set the controlling terminal to the slave side of the pty
-                set_controlling_terminal(slave)?;
-                // Slave and master are not needed anymore
-                unsafe {
+        unsafe {
+            command
+                .stdin(childin)
+                .stdout(childout)
+                .stderr(slave)
+                .pre_exec(move || {
+                    // Make this process leader of new session
+                    let slave = *child_slave;
+                    set_sessionid()?;
+                    // Set the controlling terminal to the slave side of the pty
+                    set_controlling_terminal(slave)?;
+                    // Slave and master are not needed anymore
                     cvt(libc::close(slave))?;
                     cvt(libc::close(master))?;
-                }
-                // Reset all signal handlers to default
-                unsafe {
+                    // Reset all signal handlers to default
                     libc::signal(libc::SIGCHLD, libc::SIG_DFL);
                     libc::signal(libc::SIGHUP, libc::SIG_DFL);
                     libc::signal(libc::SIGINT, libc::SIG_DFL);
                     libc::signal(libc::SIGQUIT, libc::SIG_DFL);
                     libc::signal(libc::SIGTERM, libc::SIG_DFL);
                     libc::signal(libc::SIGALRM, libc::SIG_DFL);
-                }
 
-                Ok(())
-            });
+                    Ok(())
+                })
+        };
 
         let child = command.spawn()?;
 
-        let master2 = cvt(unsafe {libc::dup(master)})?;
+        let master2 = cvt(unsafe { libc::dup(master) })?;
 
         let (stream_done_tx, stream_done_rx) = oneshot::channel::<i32>();
         let io = stdio(master, handle);
@@ -173,7 +175,7 @@ impl Pty {
         let io = stdio(master2, handle);
         let input = PtySink::new(
             io.expect("Failed to create EventedFd for input").unwrap(),
-            sink_done_rx
+            sink_done_rx,
         );
 
         let child = Child {
@@ -245,9 +247,12 @@ impl Child {
 impl Drop for Child {
     fn drop(&mut self) {
         // Ignore error for same reason as FileDesc in rust stdlib.
-        debug!("Dropping stdin/stdout fds {} {}", self.master.0, self.master.1);
-        let _ = unsafe{ libc::close(self.master.0) };
-        let _ = unsafe{ libc::close(self.master.1) };
+        debug!(
+            "Dropping stdin/stdout fds {} {}",
+            self.master.0, self.master.1
+        );
+        let _ = unsafe { libc::close(self.master.0) };
+        let _ = unsafe { libc::close(self.master.1) };
     }
 }
 
@@ -264,9 +269,8 @@ fn openpty(rows: u16, cols: u16) -> (RawFd, RawFd) {
         ws_ypixel: 0,
     };
 
-    cvt(unsafe {
-        libc::openpty(&mut master, &mut slave, ptr::null_mut(), ptr::null(), &win)
-    }).unwrap();
+    cvt(unsafe { libc::openpty(&mut master, &mut slave, ptr::null_mut(), ptr::null(), &win) })
+        .unwrap();
 
     (master, slave)
 }
@@ -285,9 +289,7 @@ pub fn get_winsize(fd: RawFd) -> io::Result<libc::winsize> {
 }
 
 pub fn set_winsize(fd: RawFd, ws: &libc::winsize) -> io::Result<()> {
-    unsafe {
-        cvt(libc::ioctl(fd, libc::TIOCSWINSZ, ws)).map(|_| ())
-    }
+    unsafe { cvt(libc::ioctl(fd, libc::TIOCSWINSZ, ws)).map(|_| ()) }
 }
 
 /*
@@ -326,8 +328,8 @@ impl Stream for PtyStream {
     type Item = Vec<u8>;
     type Error = PtyStreamError;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error>{
-        let mut buf = [0 as u8;2048];
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        let mut buf = [0 as u8; 2048];
         match self.done.poll() {
             Ok(Async::Ready(..)) => return Err(io::Error::new(io::ErrorKind::Other, "died").into()),
             _ => (),
@@ -341,20 +343,23 @@ impl Stream for PtyStream {
                 }
                 //println!("{:?}", vec);
                 return Ok(Async::Ready(Some(vec)));
-            },
+            }
             Err(e) => {
                 if e.kind() == io::ErrorKind::WouldBlock {
                     return Ok(Async::NotReady);
                 }
                 if e.kind() == io::ErrorKind::Other {
                     // Process probably exited
-                    warn!("Failed to read from {:?}: {:?}, process died?", self.ptyio, e);
+                    warn!(
+                        "Failed to read from {:?}: {:?}, process died?",
+                        self.ptyio, e
+                    );
                     return Err(PtyStreamError::ProcessDied);
                     //return Ok(Async::Ready(None));
                 }
                 warn!("Failed to read: {:?}", e);
                 return Err(e.into());
-            },
+            }
         }
     }
 }
@@ -416,7 +421,7 @@ impl Sink for PtySink {
                     trace!("wrote {} to {:?}", len, self.ptyin);
                     std::io::Write::flush(self.ptyin.get_mut()).expect("failed to flush");
                     written_len = len;
-                },
+                }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         trace!("not ready to write: {:?}", e);
@@ -430,7 +435,7 @@ impl Sink for PtySink {
         }
         self.buf.clear();
         if written_len != orig_len {
-            for x in item[written_len..orig_len-1].iter() {
+            for x in item[written_len..orig_len - 1].iter() {
                 self.buf.push(*x);
             }
         }
@@ -455,7 +460,7 @@ impl Sink for PtySink {
                     if len == orig_len {
                         res = Ok(Async::Ready(()));
                     }
-                },
+                }
                 Err(e) => {
                     //self.buf.append(copy.drain(..).collect().iter());
                     if e.kind() != io::ErrorKind::WouldBlock {
@@ -463,7 +468,7 @@ impl Sink for PtySink {
                         //res = Ok(Async::Ready(None));
                         res = Err(From::from(e));
                     }
-                },
+                }
             }
         }
         self.buf.drain(0..written_len);
@@ -472,15 +477,11 @@ impl Sink for PtySink {
 }
 
 pub fn set_sessionid() -> io::Result<()> {
-    unsafe {
-        cvt(libc::setsid()).map(|_| ())
-    }
+    unsafe { cvt(libc::setsid()).map(|_| ()) }
 }
 
 pub fn set_controlling_terminal(fd: libc::c_int) -> io::Result<()> {
-    unsafe {
-        cvt(libc::ioctl(fd, libc::TIOCSCTTY as _, 0)).map(|_| ())
-    }
+    unsafe { cvt(libc::ioctl(fd, libc::TIOCSCTTY as _, 0)).map(|_| ()) }
 }
 
 pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
@@ -491,9 +492,7 @@ pub fn set_nonblock(fd: libc::c_int) -> io::Result<()> {
 }
 
 pub fn set_cloexec(fd: libc::c_int) -> io::Result<()> {
-    unsafe {
-        cvt(libc::ioctl(fd, libc::FIOCLEX)).map(|_| ())
-    }
+    unsafe { cvt(libc::ioctl(fd, libc::FIOCLEX)).map(|_| ()) }
 }
 
 trait IsMinusOne {
@@ -501,15 +500,17 @@ trait IsMinusOne {
 }
 
 impl IsMinusOne for i32 {
-    fn is_minus_one(&self) -> bool { *self == -1 }
+    fn is_minus_one(&self) -> bool {
+        *self == -1
+    }
 }
 impl IsMinusOne for isize {
-    fn is_minus_one(&self) -> bool { *self == -1 }
+    fn is_minus_one(&self) -> bool {
+        *self == -1
+    }
 }
 
-fn cvt<T: IsMinusOne>(t: T) -> ::io::Result<T> {
-    use std::io;
-
+fn cvt<T: IsMinusOne>(t: T) -> crate::io::Result<T> {
     if t.is_minus_one() {
         Err(io::Error::last_os_error())
     } else {
@@ -522,22 +523,16 @@ pub struct Fd(RawFd);
 
 impl io::Read for Fd {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
-        let len = cvt(unsafe {
-            libc::read(self.0,
-                       bytes.as_ptr() as *mut libc::c_void,
-                       bytes.len())
-        })?;
+        let len =
+            cvt(unsafe { libc::read(self.0, bytes.as_ptr() as *mut libc::c_void, bytes.len()) })?;
         Ok(len as usize)
     }
 }
 
 impl io::Write for Fd {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let len = cvt(unsafe {
-            libc::write(self.0,
-                        bytes.as_ptr() as *mut libc::c_void,
-                        bytes.len())
-        })?;
+        let len =
+            cvt(unsafe { libc::write(self.0, bytes.as_ptr() as *mut libc::c_void, bytes.len()) })?;
         Ok(len as usize)
     }
 
@@ -547,28 +542,24 @@ impl io::Write for Fd {
 }
 
 impl Evented for Fd {
-    fn register(&self,
-                poll: &mio::Poll,
-                token: Token,
-                interest: Ready,
-                opts: PollOpt)
-                -> io::Result<()> {
-        EventedFd(&self.0).register(poll,
-                                    token,
-                                    interest | UnixReady::hup(),
-                                    opts)
+    fn register(
+        &self,
+        poll: &mio::Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.0).register(poll, token, interest | UnixReady::hup(), opts)
     }
 
-    fn reregister(&self,
-                  poll: &mio::Poll,
-                  token: Token,
-                  interest: Ready,
-                  opts: PollOpt)
-                  -> io::Result<()> {
-        EventedFd(&self.0).reregister(poll,
-                                      token,
-                                      interest | UnixReady::hup(),
-                                      opts)
+    fn reregister(
+        &self,
+        poll: &mio::Poll,
+        token: Token,
+        interest: Ready,
+        opts: PollOpt,
+    ) -> io::Result<()> {
+        EventedFd(&self.0).reregister(poll, token, interest | UnixReady::hup(), opts)
     }
 
     fn deregister(&self, poll: &mio::Poll) -> io::Result<()> {
@@ -579,9 +570,7 @@ impl Evented for Fd {
 type PtyIo = PollEvented<Fd>;
 
 // The Fd in T has to be unique so that tokio can keep track of everything..
-fn stdio(fd: RawFd, handle: &Handle)
-            -> io::Result<Option<PollEvented<Fd>>>
-{
+fn stdio(fd: RawFd, handle: &Handle) -> io::Result<Option<PollEvented<Fd>>> {
     debug!("Creating PollEvented for fd {:?}", fd);
     // Set the fd to nonblocking before we pass it to the event loop
     set_nonblock(fd)?;
