@@ -2,14 +2,14 @@
 fn it_works() {
 }
 
-use std::{io, str};
+use std::{io};
 use std::io::Cursor;
 
 use tokio_io::codec;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::{BytesMut, BufMut};
 
-use parser::{TelnetTokenizer, TelnetToken};
+use crate::parser::{TelnetTokenizer, TelnetToken};
 
 #[allow(non_snake_case)]
 pub mod IAC {

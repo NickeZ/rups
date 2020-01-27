@@ -2,6 +2,7 @@
 authors = ["Jonathan Castello <twisolar@gmail.com>"]
 name = "rust-telnet"
 version = "0.0.1"
+edition = "2018"
 
 [dependencies]
 byteorder = "1.0"

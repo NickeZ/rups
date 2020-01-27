@@ -1,4 +1,4 @@
-use parser::{TelnetToken};
+use crate::parser::{TelnetToken};
 
 
 pub trait DispatchHandler {

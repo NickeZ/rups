@@ -1,8 +1,8 @@
 use std::collections::{HashMap};
 use std::vec::{Vec};
-use carrier::{Carrier};
-pub use demux::{ChannelHandler};
-use qstate::{QAttitude};
+use crate::carrier::{Carrier};
+pub use crate::demux::{ChannelHandler};
+use crate::qstate::{QAttitude};
 
 
 pub trait TelnetChannel<Parent> {
@@ -74,9 +74,9 @@ pub struct EndpointRegistry<'parent, Parent: 'parent> {
 
   pub command_map: HashMap<u8, usize>,
   pub channel_map: HashMap<u8, usize>,
-  pub endpoints: Vec<&'parent mut (TelnetChannel<Parent> + 'parent)>,
+  pub endpoints: Vec<&'parent mut (dyn TelnetChannel<Parent> + 'parent)>,
 
-  pub main: Option<&'parent mut (TelnetChannel<Parent> + 'parent)>,
+  pub main: Option<&'parent mut (dyn TelnetChannel<Parent> + 'parent)>,
 }
 impl<'parent, Parent> EndpointRegistry<'parent, Parent>
 where Parent: ChannelHandler {
@@ -103,13 +103,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).on_data(self.parent, channel, data),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_data(self.parent, channel, data),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_data(self.parent, channel, data),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_data(self.parent, channel, data),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_data(self.parent, channel, data),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_data(self.parent, channel, data),
         }
       }
     }
@@ -117,7 +117,7 @@ where Parent: ChannelHandler {
   fn on_command(&mut self, channel: Option<u8>, command: u8) {
     match self.command_map.get(&command) {
       Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_command(self.parent, channel, command),
-      None => (&mut () as &mut TelnetChannel<Parent>).on_command(self.parent, channel, command),
+      None => (&mut () as &mut dyn TelnetChannel<Parent>).on_command(self.parent, channel, command),
     }
   }
 
@@ -126,13 +126,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).on_enable(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_enable(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_enable(self.parent, channel),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_enable(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_enable(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_enable(self.parent, channel),
         }
       }
     }
@@ -142,13 +142,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).on_disable(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_disable(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_disable(self.parent, channel),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_disable(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_disable(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_disable(self.parent, channel),
         }
       }
     }
@@ -158,13 +158,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).on_focus(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_focus(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_focus(self.parent, channel),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_focus(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_focus(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_focus(self.parent, channel),
         }
       }
     }
@@ -174,13 +174,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).on_blur(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_blur(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_blur(self.parent, channel),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).on_blur(self.parent, channel),
-          None => (&mut () as &mut TelnetChannel<Parent>).on_blur(self.parent, channel),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).on_blur(self.parent, channel),
         }
       }
     }
@@ -190,13 +190,13 @@ where Parent: ChannelHandler {
       None => {
         match self.main {
           Some(ref mut endpoint) => (*endpoint).should_enable(self.parent, channel, attitude),
-          None => (&mut () as &mut TelnetChannel<Parent>).should_enable(self.parent, channel, attitude),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).should_enable(self.parent, channel, attitude),
         }
       },
       Some(ch) => {
         match self.channel_map.get(&ch) {
           Some(&id) => (*self.endpoints.get_mut(id).unwrap()).should_enable(self.parent, channel, attitude),
-          None => (&mut () as &mut TelnetChannel<Parent>).should_enable(self.parent, channel, attitude),
+          None => (&mut () as &mut dyn TelnetChannel<Parent>).should_enable(self.parent, channel, attitude),
         }
       }
     }

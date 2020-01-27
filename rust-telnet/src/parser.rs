@@ -22,7 +22,7 @@ pub struct TelnetTokenizer {
 
   // TODO: Once types of unboxed closures can be written,
   //   replace this with a trait Pred: Fn(u8) -> bool.
-  pub is_long_command: Box<Fn(u8) -> bool + 'static>,
+  pub is_long_command: Box<dyn Fn(u8) -> bool + 'static>,
 }
 
 impl TelnetTokenizer {

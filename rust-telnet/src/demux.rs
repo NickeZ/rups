@@ -1,7 +1,7 @@
-use carrier::{Carrier};
-use dispatch::{DispatchHandler};
-use qstate::{QState, QAttitude};
-use iac::{IAC};
+use crate::carrier::{Carrier};
+use crate::dispatch::{DispatchHandler};
+use crate::qstate::{QState, QAttitude};
+use crate::iac::{IAC};
 
 pub trait ChannelHandler {
   fn on_data<'a>(&mut self, _channel: Option<u8>, _data: &'a [u8]) {}
