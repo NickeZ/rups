@@ -1,5 +1,5 @@
 use futures::stream::Fuse;
-use futures::{Stream, Sink, Poll, Async, AsyncSink, Future};
+use futures::{Async, AsyncSink, Future, Poll, Sink, Stream};
 
 /// Future for the `Sink::send_all` combinator, which sends a stream of values
 /// to a sink and then waits until the sink has fully flushed those values.
@@ -12,9 +12,10 @@ pub struct SendAll<T, U: Stream> {
 }
 
 pub fn new<T, U>(sink: T, stream: U) -> SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     SendAll {
         sink: Some(sink),
@@ -26,7 +27,7 @@ pub fn new<T, U>(sink: T, stream: U) -> SendAll<T, U>
 #[derive(Debug)]
 pub enum Reason<T> {
     StreamEnded,
-    SinkEnded{last_item: Option<T>},
+    SinkEnded { last_item: Option<T> },
 }
 
 pub trait HasItem<T> {
@@ -34,41 +35,52 @@ pub trait HasItem<T> {
 }
 
 impl<T, U> SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error>,
 {
     fn sink_mut(&mut self) -> &mut T {
-        self.sink.as_mut().take().expect("Attempted to poll SendAll after completion")
+        self.sink
+            .as_mut()
+            .take()
+            .expect("Attempted to poll SendAll after completion")
     }
 
     fn stream_mut(&mut self) -> &mut Fuse<U> {
-        self.stream.as_mut().take()
+        self.stream
+            .as_mut()
+            .take()
             .expect("Attempted to poll SendAll after completion")
     }
 
     fn take_result(&mut self, reason: Reason<T::SinkItem>) -> (T, U, Reason<T::SinkItem>) {
-        let sink = self.sink.take()
+        let sink = self
+            .sink
+            .take()
             .expect("Attempted to poll Forward after completion");
-        let fuse = self.stream.take()
+        let fuse = self
+            .stream
+            .take()
             .expect("Attempted to poll Forward after completion");
         return (sink, fuse.into_inner(), reason);
     }
 
     fn try_start_send(&mut self, item: U::Item) -> Poll<(), T::SinkError> {
         debug_assert!(self.buffered.is_none());
-        if let AsyncSink::NotReady(item) = try!(self.sink_mut().start_send(item)) {
+        if let AsyncSink::NotReady(item) = self.sink_mut().start_send(item)? {
             self.buffered = Some(item);
-            return Ok(Async::NotReady)
+            return Ok(Async::NotReady);
         }
         Ok(Async::Ready(()))
     }
 }
 
 impl<T, U> Future for SendAll<T, U>
-    where T: Sink,
-          U: Stream<Item = T::SinkItem>,
-          T::SinkError: From<U::Error> + HasItem<T::SinkItem>,
+where
+    T: Sink,
+    U: Stream<Item = T::SinkItem>,
+    T::SinkError: From<U::Error> + HasItem<T::SinkItem>,
 {
     type Item = (T, U, Reason<T::SinkItem>);
     type Error = T::SinkError;
@@ -81,24 +93,24 @@ impl<T, U> Future for SendAll<T, U>
         }
 
         loop {
-            match try!(self.stream_mut().poll()) {
-                Async::Ready(Some(item)) => {
-                    match self.try_start_send(item) {
-                        Ok(Async::Ready(t)) => t,
-                        Ok(Async::NotReady) => return Ok(Async::NotReady),
-                        Err(e) => {
-                            try_ready!(self.sink_mut().close());
-                            return Ok(Async::Ready(self.take_result(Reason::SinkEnded{last_item: e.item()})))
-                        },
+            match self.stream_mut().poll()? {
+                Async::Ready(Some(item)) => match self.try_start_send(item) {
+                    Ok(Async::Ready(t)) => t,
+                    Ok(Async::NotReady) => return Ok(Async::NotReady),
+                    Err(e) => {
+                        try_ready!(self.sink_mut().close());
+                        return Ok(Async::Ready(self.take_result(Reason::SinkEnded {
+                            last_item: e.item(),
+                        })));
                     }
                 },
                 Async::Ready(None) => {
                     try_ready!(self.sink_mut().close());
-                    return Ok(Async::Ready(self.take_result(Reason::StreamEnded)))
+                    return Ok(Async::Ready(self.take_result(Reason::StreamEnded)));
                 }
                 Async::NotReady => {
                     try_ready!(self.sink_mut().poll_complete());
-                    return Ok(Async::NotReady)
+                    return Ok(Async::NotReady);
                 }
             }
         }
